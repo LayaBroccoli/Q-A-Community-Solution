@@ -1,12 +1,18 @@
 # 🤖 laya ask AI问答系统 - 解决方案
 
-为 LayaAir 问答社区添加智能AI自动回复功能
+> 为 LayaAir 问答社区添加智能AI自动回复功能
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Status: Design](https://img.shields.io/badge/Status-🎨_Design-blue)](https://github.com/LayaBroccoli/Q-A-Community-Solution)
+[![Progress: 10%](https://img.shields.io/badge/Progress-10%25-orange)](https://github.com/LayaBroccoli/Q-A-Community-Solution)
 
 ## 📋 项目概述
 
 **目标**: 让 laya ask 问答社区具备AI自动回复能力，快速响应开发者问题，减轻官方团队压力，同时保持社区互动氛围。
 
 **核心策略**: 混合模式 - 简单问题AI直接答，复杂问题人工处理
+
+**当前状态**: 🎨 设计阶段（详见 [PROJECT.md](./PROJECT.md)）
 
 ---
 
@@ -32,13 +38,15 @@
 
 ## 📁 文档导航
 
-| 文档 | 说明 |
-|------|------|
-| [系统架构](./01-architecture.md) | 完整系统架构设计 |
-| [分类算法](./02-classification-algorithm.md) | 问题分类逻辑详解 |
-| [MCP集成](./03-mcp-integration.md) | 知识库查询方案 |
-| [实施计划](./04-implementation-plan.md) | 分阶段实施步骤 |
-| [思维导图](./mindmap.mermaid) | Mermaid思维导图 |
+| 文档 | 说明 | 状态 |
+|------|------|------|
+| [项目说明](./PROJECT.md) | 当前状态和进展 | 🔄 实时更新 |
+| [更新日志](./CHANGELOG.md) | 里程碑和实现记录 | 📅 详细记录 |
+| [系统架构](./01-architecture.md) | 完整系统架构设计 | ✅ 完成 |
+| [分类算法](./02-classification-algorithm.md) | 问题分类逻辑详解 | ✅ 完成 |
+| [MCP集成](./03-mcp-integration.md) | 知识库查询方案 | ✅ 完成 |
+| [实施计划](./04-implementation-plan.md) | 分阶段实施步骤 | ✅ 完成 |
+| [思维导图](./mindmap.mermaid) | Mermaid思维导图 | ✅ 完成 |
 
 ---
 
