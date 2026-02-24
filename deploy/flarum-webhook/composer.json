@@ -1,0 +1,24 @@
+{
+  "name": "laya/webhook",
+  "description": "LayaAir Webhook Extension - Send events to AI service",
+  "type": "flarum-extension",
+  "license": "MIT",
+  "require": {
+    "flarum/core": "^1.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "Laya\\Webhook\\": "src/"
+    }
+  },
+  "extra": {
+    "flarum-extension": {
+      "title": "LayaAir Webhook",
+      "icon": {
+        "name": "fas fa-bolt",
+        "backgroundColor": "#238BF2",
+        "color": "#fff"
+      }
+    }
+  }
+}

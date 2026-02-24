@@ -1,6 +1,7 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const Database = require('./db');
+const { verifyWebhook } = require('./webhook-middleware');
 require('dotenv').config();
 
 const app = express();
@@ -10,6 +11,9 @@ const PORT = process.env.PORT || 3000;
 // 中间件
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+
+// Webhook 端点使用验证中间件
+app.use('/webhook', verifyWebhook);
 
 // Webhook 接收端点
 app.post('/webhook/discussion', async (req, res) => {
@@ -89,11 +93,6 @@ app.listen(PORT, () => {
   console.log(`🔧 环境: ${process.env.NODE_ENV || 'development'}`);
   console.log(`\n📡 Webhook 端点: http://localhost:${PORT}/webhook/discussion`);
   console.log(`\n⏰ ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n`);
-
-  // 启动问题采集器
-  const QuestionCollector = require('./collector');
-  const collector = new QuestionCollector(db);
-  collector.start();
 });
 
 // 优雅关闭
