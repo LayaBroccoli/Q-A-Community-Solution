@@ -5,15 +5,15 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js",
-    "test": "node test-webhook.js"
+    "dev": "node --watch server.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "body-parser": "^1.20.2",
-    "mysql2": "^3.6.5",
     "axios": "^1.6.2",
-    "dotenv": "^16.3.1"
+    "body-parser": "^1.20.2",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "mysql2": "^3.6.5",
+    "openai": "^4.104.0"
   },
   "engines": {
     "node": ">=18.0.0"

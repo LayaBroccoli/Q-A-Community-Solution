@@ -1,11 +1,13 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const Database = require('./db');
+const QuestionProcessor = require('./processor');
 const { verifyWebhook } = require('./webhook-middleware');
 require('dotenv').config();
 
 const app = express();
 const db = new Database();
+const processor = new QuestionProcessor(db);
 const PORT = process.env.PORT || 3000;
 
 // 中间件
@@ -19,36 +21,25 @@ app.use('/webhook', verifyWebhook);
 app.post('/webhook/discussion', async (req, res) => {
   try {
     console.log('\n📬 收到 Webhook:', new Date().toISOString());
-    console.log('Headers:', req.headers);
-    console.log('Body:', JSON.stringify(req.body, null, 2));
 
     const { event, data } = req.body;
 
     if (event === 'discussion.created') {
-      // 处理新讨论
       const discussionId = data.discussion_id || data.id;
       
       if (discussionId) {
-        console.log(`\n✅ 新讨论创建: ID ${discussionId}`);
+        console.log(`✅ 新讨论: ID ${discussionId}`);
         
-        // 获取完整讨论信息
-        const discussion = await db.getDiscussionById(discussionId);
-        
-        if (discussion) {
-          console.log('\n📋 讨论详情:');
-          console.log(`  标题: ${discussion.title}`);
-          console.log(`  作者: ${discussion.username}`);
-          console.log(`  内容: ${discussion.content.substring(0, 100)}...`);
-          
-          // 存储到待处理队列
-          // TODO: 实现队列存储
-        }
+        // 异步处理（不阻塞响应）
+        processor.processDiscussion(discussionId).catch(err => {
+          console.error(`处理失败:`, err.message);
+        });
       }
     }
 
-    res.json({ received: true, message: 'Webhook processed' });
+    res.json({ received: true, message: 'Processing started' });
   } catch (error) {
-    console.error('❌ Webhook 处理错误:', error);
+    console.error('❌ Webhook 错误:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -87,12 +78,15 @@ app.get('/api/discussions/:id', async (req, res) => {
 });
 
 // 启动服务器
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`\n🚀 AI 服务启动成功`);
   console.log(`📍 地址: http://localhost:${PORT}`);
   console.log(`🔧 环境: ${process.env.NODE_ENV || 'development'}`);
   console.log(`\n📡 Webhook 端点: http://localhost:${PORT}/webhook/discussion`);
   console.log(`\n⏰ ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n`);
+
+  // 测试 AI 连接
+  await processor.testAI();
 });
 
 // 优雅关闭
