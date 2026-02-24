@@ -3,8 +3,8 @@
 > 为 LayaAir 问答社区添加智能AI自动回复功能
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Status: Design](https://img.shields.io/badge/Status-🎨_Design-blue)](https://github.com/LayaBroccoli/Q-A-Community-Solution)
-[![Progress: 10%](https://img.shields.io/badge/Progress-10%25-orange)](https://github.com/LayaBroccoli/Q-A-Community-Solution)
+[![Status: Deploying](https://img.shields.io/badge/Status-🚀_Deploying-green)](https://github.com/LayaBroccoli/Q-A-Community-Solution)
+[![Progress: 20%](https://img.shields.io/badge/Progress-20%25-yellow)](https://github.com/LayaBroccoli/Q-A-Community-Solution)
 
 ## 📋 项目概述
 
@@ -12,7 +12,7 @@
 
 **核心策略**: 混合模式 - 简单问题AI直接答，复杂问题人工处理
 
-**当前状态**: 🎨 设计阶段（详见 [PROJECT.md](./PROJECT.md)）
+**当前状态**: 🚀 基础设施部署中（详见 [PROJECT.md](./PROJECT.md)）
 
 ---
 
