@@ -1,0 +1,21 @@
+{
+  "name": "laya-ask-ai-service",
+  "version": "1.0.0",
+  "description": "LayaAir AI Question Answering Service",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node test-webhook.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "body-parser": "^1.20.2",
+    "mysql2": "^3.6.5",
+    "axios": "^1.6.2",
+    "dotenv": "^16.3.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
