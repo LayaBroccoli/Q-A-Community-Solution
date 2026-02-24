@@ -89,6 +89,11 @@ app.listen(PORT, () => {
   console.log(`🔧 环境: ${process.env.NODE_ENV || 'development'}`);
   console.log(`\n📡 Webhook 端点: http://localhost:${PORT}/webhook/discussion`);
   console.log(`\n⏰ ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n`);
+
+  // 启动问题采集器
+  const QuestionCollector = require('./collector');
+  const collector = new QuestionCollector(db);
+  collector.start();
 });
 
 // 优雅关闭
