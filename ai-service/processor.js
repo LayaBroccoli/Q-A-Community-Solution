@@ -47,14 +47,35 @@ class QuestionProcessor {
       const answer = result.answer;
       console.log(`\n   📤 发布回答到论坛...`);
       
-      const insertResult = await this.db.insertAIAnswer(
-        discussionId,
-        answer,
-        this.aiUserId
+      // 获取当前讨论的帖子数量
+      const postCount = await this.db.query(
+        `SELECT COUNT(*) as count FROM posts WHERE discussion_id = ?`,
+        [discussionId]
+      );
+      
+      // AI 回复的 number = 当前帖子数 + 1
+      const postNumber = postCount[0].count + 1;
+      
+      const insertResult = await this.db.query(
+        `INSERT INTO posts (discussion_id, user_id, content, created_at, is_approved, number)
+         VALUES (?, ?, ?, NOW(), 1, ?)`,
+        [discussionId, this.aiUserId, answer, postNumber]
       );
 
-      if (insertResult.success) {
-        console.log(`   ✅ 回复已发布 (帖子 ID: ${insertResult.postId})`);
+      // 更新讨论
+      await this.db.query(
+        `UPDATE discussions SET comment_count = comment_count + 1, last_posted_at = NOW(), last_posted_user_id = ? WHERE id = ?`,
+        [this.aiUserId, discussionId]
+      );
+
+      // 更新用户
+      await this.db.query(
+        `UPDATE users SET comment_count = comment_count + 1 WHERE id = ?`,
+        [this.aiUserId]
+      );
+
+      if (insertResult.insertId) {
+        console.log(`   ✅ 回复已发布 (帖子 ID: ${insertResult.insertId}, 序号: ${postNumber})`);
       } else {
         console.log(`   ❌ 发布失败`);
       }
