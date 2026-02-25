@@ -1,5 +1,6 @@
 const AIService = require('./ai-service');
 const Database = require('./db');
+const { marked } = require('marked');
 require('dotenv').config();
 
 class QuestionProcessor {
@@ -45,6 +46,13 @@ class QuestionProcessor {
 
       // 4. 发布回答
       const answer = result.answer;
+
+      // 将 Markdown 转换为 HTML
+      const htmlAnswer = marked.parse(answer);
+
+      // 包装在 <t> 标签中（Flarum 格式要求）
+      const formattedAnswer = `<t>${htmlAnswer}</t>`;
+
       console.log(`\n   📤 发布回答到论坛...`);
       
       // 获取当前讨论的帖子数量
@@ -58,13 +66,13 @@ class QuestionProcessor {
       
       const insertResult = await this.db.query(
         `INSERT INTO posts (discussion_id, user_id, content, created_at, is_approved, number, type)
-         VALUES (?, ?, ?, NOW(), 1, ?, 'comment')`,
-        [discussionId, this.aiUserId, answer, postNumber]
+         VALUES (?, ?, ?, UTC_TIMESTAMP(), 1, ?, 'comment')`,
+        [discussionId, this.aiUserId, formattedAnswer, postNumber]
       );
 
       // 更新讨论
       await this.db.query(
-        `UPDATE discussions SET comment_count = comment_count + 1, last_posted_at = NOW(), last_posted_user_id = ? WHERE id = ?`,
+        `UPDATE discussions SET comment_count = comment_count + 1, last_posted_at = UTC_TIMESTAMP(), last_posted_user_id = ? WHERE id = ?`,
         [this.aiUserId, discussionId]
       );
 

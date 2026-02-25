@@ -11,7 +11,8 @@ class Database {
       database: process.env.DB_NAME || 'flarum',
       waitForConnections: true,
       connectionLimit: 10,
-      queueLimit: 0
+      queueLimit: 0,
+      timezone: '+08:00' // 设置为北京时间 UTC+8
     });
   }
 
