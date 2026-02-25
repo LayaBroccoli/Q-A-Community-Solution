@@ -57,8 +57,8 @@ class QuestionProcessor {
       const postNumber = postCount[0].count + 1;
       
       const insertResult = await this.db.query(
-        `INSERT INTO posts (discussion_id, user_id, content, created_at, is_approved, number)
-         VALUES (?, ?, ?, NOW(), 1, ?)`,
+        `INSERT INTO posts (discussion_id, user_id, content, created_at, is_approved, number, type)
+         VALUES (?, ?, ?, NOW(), 1, ?, 'comment')`,
         [discussionId, this.aiUserId, answer, postNumber]
       );
 
