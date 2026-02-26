@@ -10,6 +10,20 @@ class QuestionProcessor {
     this.aiService = new AIService();
     this.aiUserId = parseInt(process.env.AI_USER_ID) || 4;
     this.mcpClient = new LayaMCPClient();
+    this.mcpConnected = false;
+  }
+
+  async ensureMCPConnected() {
+    if (!this.mcpConnected) {
+      try {
+        console.log('   🔗 连接 MCP 服务器...');
+        await this.mcpClient.connect();
+        this.mcpConnected = true;
+      } catch (error) {
+        console.warn(`   ⚠️  MCP 连接失败: ${error.message}`);
+        console.warn('   ⚠️  将不使用知识库上下文');
+      }
+    }
   }
 
   async processDiscussion(discussionId) {
@@ -40,6 +54,8 @@ class QuestionProcessor {
 
       // 3. 查询 MCP 知识库（如果可用）
       console.log(`\n   📚 查询 LayaAir 知识库...`);
+      await this.ensureMCPConnected();
+
       const mcpDocResult = await this.mcpClient.searchDocumentation(
         `${discussion.title} ${discussion.content}`
       );

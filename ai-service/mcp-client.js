@@ -125,10 +125,33 @@ class LayaMCPClient {
 
       const docs = this.extractTextContent(response.result);
 
+      // 解析 JSON 并提取 content 字段
+      const parsedDocs = [];
+      for (const doc of docs) {
+        try {
+          const data = JSON.parse(doc);
+          if (data.results && Array.isArray(data.results)) {
+            // 提取每个结果的 content 字段
+            data.results.forEach(item => {
+              if (item.content) {
+                parsedDocs.push(`### ${item.title || '文档'}\n\n${item.content}`);
+              }
+            });
+          }
+        } catch (e) {
+          // 如果解析失败，使用原始文本
+          parsedDocs.push(doc);
+        }
+      }
+
+      const context = parsedDocs.length > 0
+        ? parsedDocs.join('\n\n---\n\n')
+        : this.buildFallbackContext(query);
+
       return {
         success: true,
-        results: docs,
-        context: docs.length > 0 ? docs.join('\n\n') : this.buildFallbackContext(query),
+        results: parsedDocs,
+        context: context,
         raw: response.result
       };
 
