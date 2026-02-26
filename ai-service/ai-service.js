@@ -9,13 +9,13 @@ class AIService {
     this.model = process.env.OPENAI_MODEL || 'gpt-4';
   }
 
-  async generateAnswer(question) {
+  async generateAnswer(question, mcpContext = '') {
     try {
       console.log(`\n🤖 生成 AI 回答...`);
       console.log(`   问题: ${question.title}`);
       console.log(`   模型: ${this.model}`);
 
-      const prompt = this.buildPrompt(question);
+      const prompt = this.buildPrompt(question, mcpContext);
 
       const completion = await this.client.chat.completions.create({
         model: this.model,
@@ -55,8 +55,8 @@ class AIService {
     }
   }
 
-  buildPrompt(question) {
-    return `
+  buildPrompt(question, mcpContext = '') {
+    let prompt = `
 # 用户问题
 标题：${question.title}
 内容：${question.content}
@@ -69,7 +69,25 @@ class AIService {
 3. 使用标准 Markdown 格式
 4. 如果问题不清楚，明确说明
 5. 保持友好和帮助的态度
+`;
 
+    // 如果有 MCP 上下文，添加到 prompt
+    if (mcpContext && mcpContext.trim().length > 0) {
+      prompt += `
+# 参考资料（来自 LayaAir 知识库）
+${mcpContext}
+
+**重要**：请优先参考以上资料回答问题。如果资料中有相关代码示例或文档，请基于这些内容给出准确答案。
+`;
+    } else {
+      prompt += `
+# 参考资料
+- [LayaAir 官网](https://layaair.com/)
+- [LayaAir 3.x 文档](https://layaair.ldc2.layabox.com/layaair3.x/)
+`;
+    }
+
+    prompt += `
 # Markdown 格式要求
 - 标题：## 或 ###
 - 加粗：**文字**
@@ -99,6 +117,8 @@ class AIService {
 
 现在请回答：
 `;
+
+    return prompt;
   }
 
   getFallbackAnswer(question) {

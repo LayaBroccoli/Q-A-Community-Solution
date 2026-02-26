@@ -1,6 +1,7 @@
 const AIService = require('./ai-service');
 const Database = require('./db');
 const { marked } = require('marked');
+const LayaMCPClient = require('./mcp-client');
 require('dotenv').config();
 
 class QuestionProcessor {
@@ -8,6 +9,7 @@ class QuestionProcessor {
     this.db = db;
     this.aiService = new AIService();
     this.aiUserId = parseInt(process.env.AI_USER_ID) || 4;
+    this.mcpClient = new LayaMCPClient();
   }
 
   async processDiscussion(discussionId) {
@@ -36,9 +38,26 @@ class QuestionProcessor {
         return;
       }
 
-      // 3. 生成 AI 回答
+      // 3. 查询 MCP 知识库（如果可用）
+      console.log(`\n   📚 查询 LayaAir 知识库...`);
+      const mcpDocResult = await this.mcpClient.searchDocumentation(
+        `${discussion.title} ${discussion.content}`
+      );
+
+      const mcpCodeResult = await this.mcpClient.searchCode(
+        discussion.title
+      );
+
+      // 合并 MCP 上下文
+      const mcpContext = `
+${mcpDocResult.context}
+
+${mcpCodeResult.context}
+`;
+
+      // 4. 生成 AI 回答（带 MCP 上下文）
       console.log(`\n   🤖 调用 AI 生成回答...`);
-      const result = await this.aiService.generateAnswer(discussion);
+      const result = await this.aiService.generateAnswer(discussion, mcpContext);
 
       if (!result.success) {
         console.log(`   ❌ AI 生成失败，使用备用答案`);
