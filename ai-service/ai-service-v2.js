@@ -18,9 +18,9 @@ class AIService {
 
     // 3.x 强信号（权重 10）
     const v3Strong = ['layaair3', 'layaair 3', 'laya3', '3.x', '3.0', '3.1', '3.2', '3.3', '3.4', 'ide 3', 'ide3'];
-    // 3.x 弱信号（权重 5）
+    // 3.x 弱信号（权重 3）
     const v3WeakPatterns = [
-      /import\s+.*?\s+from\s+["']laya/i,
+      /import.*from.*["']laya\//i,
       /@regclass/i
     ];
     // 2.x 强信号（权重 10）
@@ -307,27 +307,6 @@ ${mcpContext}
 - [3.x API 入口](https://layaair.com/3.x/api/)
 - [社区论坛](https://ask.layabox.com/)
 `;
-  }
-
-  async testConnection() {
-    try {
-      const testQuestion = {
-        title: '测试',
-        content: '测试',
-        username: 'test'
-      };
-
-      const result = await this.generateAnswer(testQuestion, '');
-      return {
-        success: result.success,
-        model: this.model
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
   }
 }
 
