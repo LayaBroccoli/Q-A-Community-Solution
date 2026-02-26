@@ -82,8 +82,8 @@ ${mcpContext}
     } else {
       prompt += `
 # 参考资料
-- [LayaAir 官网](https://layaair.com/)
-- [LayaAir 3.x 文档](https://layaair.ldc2.layabox.com/layaair3.x/)
+- [LayaAir 官方文档](https://www.layaair.com/#/doc)
+- [LayaAir API 文档](https://www.layaair.com/#/doc/API/2D/laya/display/Sprite)
 `;
     }
 
@@ -108,8 +108,10 @@ ${mcpContext}
 // 代码示例
 \`\`\`
 
-## 相关文档
-- [文档名称](链接)
+## 相关文档（使用正确的官方文档链接）
+文档链接格式：https://www.layaair.com/#/doc/API/2D/laya/display/Sprite
+- [文档名称](https://www.layaair.com/#/doc/...)
+- 或使用：https://www.layaair.com/#/doc 主页
 
 ## 注意事项
 - 注意点1
@@ -128,7 +130,7 @@ ${mcpContext}
 这是一个很好的问题。作为 LayaAir AI 助手，我正在学习中，目前暂时无法提供完整的答案。
 
 **建议：**
-1. 查看 [LayaAir 官方文档](https://layaair.com/)
+1. 查看 [LayaAir 官方文档](https://www.layaair.com/#/doc)
 2. 在 [LayaAir 社区](https://ask.layabox.com/) 搜索类似问题
 3. 咨询官方技术支持
 
