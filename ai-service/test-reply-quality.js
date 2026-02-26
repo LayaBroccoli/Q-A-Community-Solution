@@ -255,7 +255,7 @@ ${apis.context}
     // 提取代码块
     const codeMatch = content.match(/```(?:typescript|javascript|js|ts)\n([\s\S]*?)\n```/);
     if (!codeMatch) {
-      return { score: 0, max: 25, hasCode: true but invalid: true };
+      return { score: 0, max: 25, hasCode: true, invalid: true };
     }
 
     const code = codeMatch[1];
