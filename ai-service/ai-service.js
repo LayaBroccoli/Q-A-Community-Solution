@@ -107,19 +107,46 @@ class AIService {
         ],
         temperature: 0.7,
         max_tokens: 2000,
-        timeout: 180000  // 180秒超时（适配NVIDIA API慢响应）
+        timeout: 180000,  // 180秒超时（适配NVIDIA API慢响应）
+        // 禁用思维链模式，让AI直接生成回复到content
+        extra_body: {
+          enable_thinking: false
+        }
       });
 
       const choice = completion.choices[0];
       const message = choice.message;
 
-      // GLM-4.7思维链模式：content为空，内容在reasoning_content中
+      // 优先使用content字段
       let answer = message.content || '';
 
-      // 如果content为空，尝试读取reasoning_content
+      // 如果content为空，读取reasoning_content（GLM-4.7思维链模式）
       if ((!answer || answer.trim().length === 0) && message.reasoning_content) {
-        answer = message.reasoning_content;
-        console.log(`   ℹ️  使用reasoning_content (${answer.length} 字符)`);
+        const reasoning = message.reasoning_content;
+
+        // 提取答案部分（过滤思考过程，只保留最终答案）
+        // 查找答案开始标记："## 问题分析" 或 "### 问题分析"
+        const answerStart = reasoning.indexOf('## 问题分析') !== -1
+          ? reasoning.indexOf('## 问题分析')
+          : reasoning.indexOf('### 问题分析') !== -1
+          ? reasoning.indexOf('### 问题分析')
+          : reasoning.indexOf('## 问题') !== -1
+          ? reasoning.indexOf('## 问题')
+          : -1;
+
+        if (answerStart !== -1) {
+          // 找到答案标记，提取从该标记开始的内容
+          answer = reasoning.substring(answerStart);
+          console.log(`   ✅ 从reasoning_content提取答案 (${answer.length} 字符，已过滤思考过程)`);
+        } else {
+          // 没找到答案标记，使用备用答案
+          console.warn(`   ⚠️  reasoning_content中未找到答案标记，使用备用答案`);
+          return {
+            success: false,
+            error: 'No answer in reasoning_content',
+            answer: this.getFallbackAnswer(question)
+          };
+        }
       }
 
       // 检查AI是否返回了空内容
