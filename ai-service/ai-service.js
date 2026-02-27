@@ -110,7 +110,17 @@ class AIService {
         timeout: 180000  // 180秒超时（适配NVIDIA API慢响应）
       });
 
-      const answer = completion.choices[0].message.content;
+      const choice = completion.choices[0];
+      const message = choice.message;
+
+      // GLM-4.7思维链模式：content为空，内容在reasoning_content中
+      let answer = message.content || '';
+
+      // 如果content为空，尝试读取reasoning_content
+      if ((!answer || answer.trim().length === 0) && message.reasoning_content) {
+        answer = message.reasoning_content;
+        console.log(`   ℹ️  使用reasoning_content (${answer.length} 字符)`);
+      }
 
       // 检查AI是否返回了空内容
       if (!answer || answer.trim().length === 0) {
