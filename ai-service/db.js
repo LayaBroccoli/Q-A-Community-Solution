@@ -51,14 +51,27 @@ class Database {
         d.slug,
         u.username,
         u.email,
-        p.content
+        p.content,
+        COALESCE(GROUP_CONCAT(t.name ORDER BY t.id SEPARATOR ','), '') as tags
       FROM discussions d
       JOIN users u ON d.user_id = u.id
       JOIN posts p ON d.first_post_id = p.id
+      LEFT JOIN discussion_tag dt ON d.id = dt.discussion_id
+      LEFT JOIN tags t ON dt.tag_id = t.id
       WHERE d.id = ?
+      GROUP BY d.id, d.title, d.first_post_id, d.user_id, d.created_at, d.slug, u.username, u.email, p.content
     `;
     const rows = await this.query(sql, [discussionId]);
-    return rows[0];
+    const discussion = rows[0];
+    
+    // 处理tags字符串为数组
+    if (discussion && discussion.tags) {
+      discussion.tags = discussion.tags.split(',').filter(t => t);
+    } else if (discussion) {
+      discussion.tags = [];
+    }
+    
+    return discussion;
   }
 
   async insertAIAnswer(discussionId, content, authorId = 4) {
