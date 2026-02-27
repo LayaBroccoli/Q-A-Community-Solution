@@ -4,6 +4,18 @@ const { marked } = require('marked');
 const LayaMCPClient = require('./mcp-client');
 require('dotenv').config();
 
+// ============================================================
+// 噪音词列表（全局常量）
+// ============================================================
+const NOISE_WORDS = new Set([
+  '怎么', '如何', '实现', '问题', '请问', '关于', '为什么', '我想', '可以', '帮我',
+  '谢谢', '求助', '使用', '用', 'layaair', 'laya', '引擎', '版本', '怎样', '一个',
+  '这个', '什么', '会不会', '能不能', '有没有', '是否', '不行', '了', '吗', '呢',
+  '啊', '哦', '呀', '嘛', '吧', '着', '过', '给', '把', '被', '让', '叫', '使',
+  '通过', '根据', '按照', '由于', '因为', '所以', '但是', '然后', '接着', '最后',
+  '代码', '方法', '功能', '效果', '东西', '情况', '时候', '位置', '地方', '部分'
+]);
+
 class QuestionProcessor {
   constructor(db) {
     this.db = db;
@@ -14,165 +26,152 @@ class QuestionProcessor {
   }
 
   /**
-   * 提取搜索关键词（v4.0 规范）
-   * 原则：拆原子 → 去噪音 → 英文优先 → 不加 Laya. 前缀
+   * 从文本中提炼技术核心词，去自然语言噪音
+   * @param {string} text - 输入文本
+   * @param {number} maxWords - 最多返回几个词
+   * @returns {string} 提取的关键词（空格分隔）
    */
-  extractSearchQuery(title, content) {
-    // 去除HTML标签
-    const stripHtml = (html) => {
-      return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
-    };
+  _extractKeywords(text, maxWords = 4) {
+    // 去HTML标签
+    const clean = text.replace(/<[^>]*>/g, '');
 
-    // 去噪音词（无效词列表）
-    const noiseWords = new Set([
-      '怎么', '如何', '我想', '实现', '请问', '关于', 'LayaAir', '引擎',
-      '什么', '怎么', '怎么写', '如何写', '怎样', '吗', '呢', '啊',
-      '使用', '通过', '可以', '需要', '有没有', '是否', '问题',
-      '一个', '这个', '那个', '功能', '方法', '代码'
-    ]);
+    // 去标点
+    const noPunctuation = clean.replace(/[？?！!，,。.【】\[\]()（）「」""''\s]/g, ' ');
 
-    // 中文概念到英文API的映射（v4.0优化）
-    const conceptToApi = {
-      // 事件相关
-      '点击事件': 'Event CLICK on',
-      '点击': 'CLICK',
-      '事件': 'Event',
-      '事件监听': 'EventListener on',
-      '监听': 'on',
-      '触发': 'trigger',
-      '回调': 'callback',
-      '回调函数': 'callback function',
-      
-      // 动画相关
-      '动画': 'Animation',
-      '播放动画': 'play Animation',
-      '帧动画': 'frameAnimation',
-      '补间动画': 'Tween',
-      
-      // 物理相关
-      '物理引擎': 'Physics',
-      '碰撞': 'Collision',
-      '刚体': 'Rigidbody',
-      
-      // UI相关
-      '文本': 'Text',
-      '按钮': 'Button',
-      '输入框': 'TextInput',
-      '列表': 'List',
-      
-      // 常见动作
-      '创建': 'create',
-      '添加': 'add',
-      '移除': 'remove',
-      '删除': 'destroy',
-      '加载': 'load',
-      '显示': 'show',
-      '隐藏': 'hide'
-    };
+    // 分词
+    const words = noPunctuation.split(/\s+/);
 
-    // 提取API名称（英文类名，不加Laya.前缀）
-    const extractApiNames = (text) => {
-      const matches = text.match(/[A-Z][a-zA-Z0-9_]*/g) || [];
-      // 过滤掉常见的非API词
-      return [...new Set(matches)]
-        .filter(name => 
-          name.length > 1 && 
-          !noiseWords.has(name) &&
-          name !== 'HTML' && 
-          name !== 'URL' &&
-          !name.startsWith('http')
-        );
-    };
+    // 去噪音
+    const filtered = words.filter(w =>
+      w.length > 1 &&
+      !NOISE_WORDS.has(w.toLowerCase())
+    );
 
-    // 识别中文概念（新增）
-    const extractConcepts = (text) => {
-      const concepts = [];
-      for (const [chinese, english] of Object.entries(conceptToApi)) {
-        if (text.includes(chinese)) {
-          // 将英文短语按空格拆分成多个关键词
-          const words = english.split(/\s+/);
-          concepts.push(...words);
-        }
-      }
-      return [...new Set(concepts)]; // 去重
-    };
-
-    // 拆原子：从标题和内容中提取独立技术点
-    const titleApis = extractApiNames(title);
-    const cleanContent = stripHtml(content);
-    const contentApis = extractApiNames(cleanContent);
-
-    // 提取中文概念对应的英文API
-    const titleConcepts = extractConcepts(title);
-    const contentConcepts = extractConcepts(cleanContent);
-
-    // 合并所有关键词：API名称 + 概念映射
-    const allApis = [...new Set([
-      ...titleApis,
-      ...contentApis,
-      ...titleConcepts,
-      ...contentConcepts
-    ])]
-      .slice(0, 6)  // 增加到6个关键词
-      .filter(name => !name.includes('Laya')); // 去除带Laya前缀的
-
-    // 如果找到关键词，直接使用
-    if (allApis.length > 0) {
-      return allApis.join(' ');
-    }
-
-    // 如果没有找到关键词，提取核心词（去噪音）
-    const titleWords = title
-      .replace(/[？?！!，,。.\s]/g, ' ')
-      .split(/\s+/)
-      .filter(word => word.length > 1 && !noiseWords.has(word))
-      .slice(0, 2);
-
-    return titleWords.join(' ').substring(0, 50);
+    return filtered.slice(0, maxWords).join(' ');
   }
 
   /**
-   * 预过滤检查（v4.0 规范）
-   * 以下情况不回复：吐槽、建议、招聘、灌水、内容太少、纯截图
+   * 从帖子中提炼 MCP 查询列表
+   * 返回格式：[{ tool: 'get_api_detail' | 'query_api' | 'query_docs', query: string }]
+   *
+   * 优先级：
+   * 1. Laya.类名.方法名 → get_api_detail（精确查询）
+   * 2. Laya.类名 → get_api_detail（精确查询）
+   * 3. 报错信息 → query_api
+   * 4. 标题提炼 → query_docs
+   * 5. 正文补充 → query_api
    */
-  shouldSkipReply(discussion) {
-    const stripHtml = (html) => {
-      return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+  extractMCPQueries(title, content) {
+    const text = title + ' ' + content;
+    const results = [];
+    const seen = new Set();
+
+    const add = (tool, query) => {
+      const q = query.trim();
+      if (q && !seen.has(q)) {
+        seen.add(q);
+        results.push({ tool, query: q });
+      }
     };
 
-    const cleanContent = stripHtml(discussion.content);
-    const cleanTitle = discussion.title.trim();
+    // ── 1. Laya.类名.方法名 → get_api_detail（精确，最优先）
+    const classMethods = text.match(/Laya\.([A-Z]\w+\.[a-z]\w+)/g) || [];
+    classMethods.slice(0, 3).forEach(m => {
+      add('get_api_detail', m.replace('Laya.', ''));
+    });
 
-    // 检查是否已有人工回复
-    // 注意：这里不检查，因为这是首次回复
-    
-    // 帖子内容少于20字且无代码
-    if (cleanContent.length < 20 && !cleanContent.includes('```') && !cleanContent.includes('代码')) {
-      console.log(`   ⏭️  内容太少（${cleanContent.length}字），跳过`);
-      return true;
+    // ── 2. Laya.类名 → get_api_detail
+    const classNames = text.match(/Laya\.([A-Z]\w+)/g) || [];
+    classNames.slice(0, 3).forEach(c => {
+      const name = c.replace('Laya.', '');
+      // 如果这个类还没有被查询过（包括它的方法）
+      if (!results.some(r => r.query.startsWith(name + '.'))) {
+        add('get_api_detail', name);
+      }
+    });
+
+    // ── 3. 报错信息 → query_api
+    const errorMatch = text.match(/(TypeError|ReferenceError|Cannot\s+\w+|未定义)[^\n]{0,60}/i);
+    if (errorMatch) {
+      add('query_api', errorMatch[0].trim().substring(0, 60));
     }
 
-    // 检查是否是纯吐槽/灌水（简单判断）
-    const spamKeywords = ['吐槽', '无语', '坑爹', '垃圾', '难受', '烦'];
-    const hasSpamKeyword = spamKeywords.some(kw => 
-      cleanContent.includes(kw) || cleanTitle.includes(kw)
+    // ── 4. 标题提炼 → query_docs（≤4词，去噪音）
+    const titleKeywords = this._extractKeywords(title, 4);
+    if (titleKeywords) {
+      add('query_docs', titleKeywords);
+    }
+
+    // ── 5. 正文补充（前面查询不足2条时追加）
+    if (results.length < 2) {
+      const contentKeywords = this._extractKeywords(content, 4);
+      if (contentKeywords) {
+        add('query_api', contentKeywords);
+      }
+    }
+
+    return results.slice(0, 5); // 最多5条查询
+  }
+
+  /**
+   * 并行执行所有MCP查询，合并结果
+   * @param {string} title
+   * @param {string} content
+   * @returns {Promise<{success: boolean, context: string}>}
+   */
+  async searchMCP(title, content) {
+    await this.ensureMCPConnected();
+
+    const queries = this.extractMCPQueries(title, content);
+
+    if (queries.length === 0) {
+      console.log('   ⚠️  没有提取到有效关键词');
+      return { success: false, context: '' };
+    }
+
+    console.log(`\n   🔍 MCP 查询列表 (${queries.length}条):`);
+    queries.forEach((q, i) => {
+      console.log(`      ${i + 1}. [${q.tool}] "${q.query}"`);
+    });
+
+    // 并行执行所有查询
+    const promises = queries.map(q =>
+      this.mcpClient.search(q.tool, q.query).catch(err => {
+        console.warn(`      ⚠️  [${q.tool}] "${q.query}" 失败: ${err.message}`);
+        return null;
+      })
     );
-    if (hasSpamKeyword && cleanContent.length < 50) {
-      console.log(`   ⏭️  识别为吐槽/灌水，跳过`);
-      return true;
+
+    const results = await Promise.all(promises);
+
+    // 合并非空结果
+    const contexts = results
+      .filter(r => r && r.success && r.context)
+      .map(r => r.context);
+
+    console.log(`   ✅ 成功: ${contexts.length}/${queries.length} 条查询有结果`);
+
+    // 搜索失败时用更短的词重试一次
+    if (contexts.length === 0) {
+      console.log('   ⚠️  首次搜索无结果，尝试简化关键词重试...');
+      const retryQuery = this._extractKeywords(title, 2);
+      if (retryQuery) {
+        try {
+          const retryResult = await this.mcpClient.search('query_api', retryQuery);
+          if (retryResult && retryResult.context) {
+            contexts.push(retryResult.context);
+            console.log(`   ✅ 重试成功: "${retryQuery}"`);
+          }
+        } catch (err) {
+          console.warn(`   ⚠️  重试失败: ${err.message}`);
+        }
+      }
     }
 
-    // 检查是否是招聘/求职
-    const jobKeywords = ['招聘', '求职', '招人', '找工作', '招聘信息'];
-    const isJobPost = jobKeywords.some(kw => 
-      cleanTitle.includes(kw) || cleanContent.includes(kw)
-    );
-    if (isJobPost) {
-      console.log(`   ⏭️  招聘/求职帖，跳过`);
-      return true;
-    }
-
-    return false;
+    return {
+      success: contexts.length > 0,
+      context: contexts.join('\n\n---\n\n'),
+    };
   }
 
   async ensureMCPConnected() {
@@ -188,6 +187,62 @@ class QuestionProcessor {
     }
   }
 
+  /**
+   * 预过滤检查（v4.0 规范）
+   * 以下情况不回复：吐槽、建议、招聘、灌水、内容太少、纯截图
+   */
+  shouldSkipReply(discussion) {
+    const stripHtml = (html) => {
+      return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    };
+
+    const title = stripHtml(discussion.title);
+    const content = stripHtml(discussion.content);
+    const fullText = (title + ' ' + content).toLowerCase();
+
+    // 规则1: 内容太少（<20字符）
+    if (fullText.length < 20) {
+      console.log(`   ⏭️  预过滤：内容太少 (${fullText.length} 字符)`);
+      return true;
+    }
+
+    // 规则2: 纯截图或附件（没有文字内容）
+    if (content.length < 10) {
+      console.log(`   ⏭️  预过滤：纯截图/附件`);
+      return true;
+    }
+
+    // 规则3: 吐槽/抱怨（关键词：垃圾,烂,恶心,烦,烦死了,无语）
+    const complainKeywords = ['垃圾', '烂', '恶心', '烦死了', '无语', '坑', 'bug一堆'];
+    if (complainKeywords.some(k => fullText.includes(k))) {
+      console.log(`   ⏭️  预过滤：吐槽/抱怨`);
+      return true;
+    }
+
+    // 规则4: 招聘信息（关键词：招聘,招人,岗位,职位,简历）
+    const jobKeywords = ['招聘', '招人', '岗位', '职位', '简历', '面试'];
+    if (jobKeywords.some(k => fullText.includes(k))) {
+      console.log(`   ⏭️  预过滤：招聘信息`);
+      return true;
+    }
+
+    // 规则5: 建议/反馈（关键词：建议,希望,能不能加,求支持）
+    const suggestionKeywords = ['建议', '希望', '能不能加', '求支持', '求功能'];
+    if (suggestionKeywords.some(k => fullText.includes(k))) {
+      console.log(`   ⏭️  预过滤：建议/反馈`);
+      return true;
+    }
+
+    // 规则6: 灌水（重复字符超过5次）
+    const repeatPattern = /(.)\1{5,}/;
+    if (repeatPattern.test(fullText)) {
+      console.log(`   ⏭️  预过滤：灌水（重复字符）`);
+      return true;
+    }
+
+    return false;
+  }
+
   async processDiscussion(discussionId) {
     try {
       console.log(`\n⚙️  处理讨论 #${discussionId}...`);
@@ -199,7 +254,7 @@ class QuestionProcessor {
 
       while (!discussion && retries < maxRetries) {
         discussion = await this.db.getDiscussionById(discussionId);
-        
+
         if (!discussion) {
           retries++;
           if (retries < maxRetries) {
@@ -235,64 +290,17 @@ class QuestionProcessor {
         return;
       }
 
-      // 4. 查询 MCP 知识库（如果可用）
+      // 4. 查询 MCP 知识库（并行搜索）
       console.log(`\n   📚 查询 LayaAir 知识库...`);
-      await this.ensureMCPConnected();
+      const mcpResult = await this.searchMCP(discussion.title, discussion.content);
 
-      // 提取搜索关键词
-      const searchQuery = this.extractSearchQuery(discussion.title, discussion.content);
-      console.log(`   🔍 搜索关键词: "${searchQuery}"`);
+      const mcpContext = mcpResult.success ? mcpResult.context : '';
 
-      // 智能选择 MCP 工具并带重试机制
-      let mcpDocResult = { success: false, context: '' };
-      let mcpCodeResult = { success: false, context: '' };
-
-      // 检查搜索查询是否包含多个关键词
-      const keywords = searchQuery.split(' ').filter(k => k.length > 0);
-
-      if (keywords.length > 1) {
-        // 多个关键词：分别搜索每个关键词，然后合并结果
-        console.log(`   📌 检测到${keywords.length}个关键词，分别搜索...`);
-
-        const allDocResults = [];
-        const allCodeResults = [];
-
-        for (let i = 0; i < keywords.length; i++) {
-          const keyword = keywords[i];
-          console.log(`   📌 搜索${i + 1}/${keywords.length}: "${keyword}"`);
-
-          const docResult = await this.mcpClient.searchDocumentation(keyword);
-          const codeResult = await this.mcpClient.searchCode(keyword);
-
-          if (docResult.success) allDocResults.push(docResult.context);
-          if (codeResult.success) allCodeResults.push(codeResult.context);
-        }
-
-        // 合并所有结果
-        mcpDocResult = {
-          success: allDocResults.length > 0,
-          context: allDocResults.join('\n\n---\n\n')
-        };
-
-        mcpCodeResult = {
-          success: allCodeResults.length > 0,
-          context: allCodeResults.join('\n\n---\n\n')
-        };
-
-        console.log(`   ✅ 合并结果: ${allDocResults.length}个文档 + ${allCodeResults.length}个API`);
+      if (mcpContext) {
+        console.log(`   ✅ 获取到 ${mcpContext.length} 字符的上下文`);
       } else {
-        // 单个关键词：直接搜索
-        console.log(`   📌 搜索 "${searchQuery}"`);
-        mcpDocResult = await this.mcpClient.searchDocumentation(searchQuery);
-        mcpCodeResult = await this.mcpClient.searchCode(searchQuery);
+        console.log(`   ⚠️  未获取到上下文，AI将根据常识回答`);
       }
-
-      // 合并 MCP 上下文
-      const mcpContext = `
-${mcpDocResult.context}
-
-${mcpCodeResult.context}
-`;
 
       // 5. 生成 AI 回答（带 MCP 上下文）
       console.log(`\n   🤖 调用 AI 生成回答...`);
@@ -305,6 +313,12 @@ ${mcpCodeResult.context}
       // 6. 发布回答
       const answer = result.answer;
 
+      // 检查空内容
+      if (!answer || answer.trim().length < 10) {
+        console.log(`   ❌ AI 回复内容为空或太短，跳过发布`);
+        return;
+      }
+
       // 将 Markdown 转换为 HTML
       const htmlAnswer = marked.parse(answer);
 
@@ -312,49 +326,52 @@ ${mcpCodeResult.context}
       const formattedAnswer = `<t>${htmlAnswer}</t>`;
 
       console.log(`\n   📤 发布回答到论坛...`);
-      
+
       // 获取当前讨论的帖子数量
       const postCount = await this.db.query(
         `SELECT COUNT(*) as count FROM posts WHERE discussion_id = ?`,
         [discussionId]
       );
-      
+
       // AI 回复的 number = 当前帖子数 + 1
       const postNumber = postCount[0].count + 1;
-      
+
       const insertResult = await this.db.query(
         `INSERT INTO posts (discussion_id, user_id, content, created_at, is_approved, number, type)
          VALUES (?, ?, ?, UTC_TIMESTAMP(), 1, ?, 'comment')`,
         [discussionId, this.aiUserId, formattedAnswer, postNumber]
       );
 
-      // 更新讨论
+      console.log(`   ✅ 回复已发布 (帖子 ID: ${insertResult.insertId}, 序号: ${postNumber})`);
+      console.log(`   📊 回复长度: ${answer.length} 字符`);
+
+      // 7. 更新讨论的评论数（Flarum 要求）
       await this.db.query(
-        `UPDATE discussions SET comment_count = comment_count + 1, last_posted_at = UTC_TIMESTAMP(), last_posted_user_id = ? WHERE id = ?`,
-        [this.aiUserId, discussionId]
+        `UPDATE discussions SET comment_count = comment_count + 1, last_posted_at = UTC_TIMESTAMP() WHERE id = ?`,
+        [discussionId]
       );
 
-      // 更新用户
-      await this.db.query(
-        `UPDATE users SET comment_count = comment_count + 1 WHERE id = ?`,
-        [this.aiUserId]
-      );
-
-      if (insertResult.insertId) {
-        console.log(`   ✅ 回复已发布 (帖子 ID: ${insertResult.insertId}, 序号: ${postNumber})`);
-      } else {
-        console.log(`   ❌ 发布失败`);
-      }
-
-      console.log(`\n   ✅ 处理完成\n`);
+      console.log(`   ✅ 处理完成`);
 
     } catch (error) {
-      console.error(`   ❌ 处理失败:`, error.message);
+      console.error(`   ❌ 处理讨论 #${discussionId} 失败:`, error.message);
+      throw error;
     }
   }
 
+  /**
+   * 测试 AI 连接
+   */
   async testAI() {
-    return await this.aiService.testConnection();
+    try {
+      console.log('\n🧪 测试 AI 连接...');
+      const result = await this.aiService.generate({
+        messages: [{ role: 'user', content: '你好' }]
+      });
+      console.log('✅ AI 连接正常');
+    } catch (error) {
+      console.error('❌ AI 连接失败:', error.message);
+    }
   }
 }
 

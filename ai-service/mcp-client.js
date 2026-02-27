@@ -13,7 +13,9 @@ class LayaMCPClient {
       'Content-Type': 'application/json'
     };
     this.requestId = 0;
-    
+    this.connected = false;
+    this.sessionId = null;
+
     // 配置 axios
     this.axios = axios.create({
       timeout: 120000,  // 120秒超时
@@ -21,13 +23,21 @@ class LayaMCPClient {
     });
   }
 
+  /**
+   * 连接MCP服务器（幂等，可重复调用）
+   */
   async connect() {
+    // 已连接，直接复用
+    if (this.connected && this.sessionId) {
+      return;
+    }
+
     try {
       console.log('\n🔗 连接到 LayaAir MCP 服务器...');
       console.log(`   URL: ${this.url}`);
 
       // 测试连接（发送 initialize 请求）
-      await this.sendRequest({
+      const response = await this.sendRequestWithRetry({
         jsonrpc: '2.0',
         id: ++this.requestId,
         method: 'initialize',
@@ -41,8 +51,11 @@ class LayaMCPClient {
         }
       });
 
-      console.log('✅ MCP 连接成功');
+      // 保存会话ID
+      this.sessionId = response?.result || Date.now();
       this.connected = true;
+
+      console.log('✅ MCP 连接成功');
 
       // 列出可用工具
       await this.listAvailableTools();
@@ -52,6 +65,32 @@ class LayaMCPClient {
       this.connected = false;
       throw error;
     }
+  }
+
+  /**
+   * 带重试的请求封装
+   * @param {object} payload - 请求负载
+   * @param {number} maxRetries - 最大重试次数
+   */
+  async sendRequestWithRetry(payload, maxRetries = 2) {
+    let lastError;
+
+    for (let i = 0; i <= maxRetries; i++) {
+      try {
+        return await this.sendRequest(payload);
+      } catch (error) {
+        lastError = error;
+
+        if (i < maxRetries) {
+          // 指数退避：1s, 2s, 4s...
+          const delay = 1000 * Math.pow(2, i);
+          console.warn(`   ⚠️  请求失败，${delay}ms后重试 (${i + 1}/${maxRetries})...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    throw lastError;
   }
 
   async sendRequest(payload) {
@@ -65,7 +104,7 @@ class LayaMCPClient {
     }
 
     try {
-      const response = await this.sendRequest({
+      const response = await this.sendRequestWithRetry({
         jsonrpc: '2.0',
         id: ++this.requestId,
         method: 'tools/list',
@@ -95,6 +134,92 @@ class LayaMCPClient {
     }
   }
 
+  /**
+   * 统一搜索入口，根据 tool 路由到不同 MCP 工具
+   * @param {string} tool - 'get_api_detail' | 'query_api' | 'query_docs'
+   * @param {string} query - 搜索词
+   */
+  async search(tool, query) {
+    try {
+      switch (tool) {
+        case 'get_api_detail':
+          return await this.getApiDetail(query);
+        case 'query_api':
+          return await this.searchCode(query);
+        case 'query_docs':
+          return await this.searchDocumentation(query);
+        default:
+          console.warn(`   ⚠️  未知工具: ${tool}，使用 query_api`);
+          return await this.searchCode(query);
+      }
+    } catch (error) {
+      console.warn(`   ❌ MCP search failed [${tool}] "${query}":`, error.message);
+      return { success: false, context: '' };
+    }
+  }
+
+  /**
+   * 精确获取 API 详情（不走向量搜索，直接查类名/方法名）
+   * @param {string} name - 类名或"类名.方法名"，不加 Laya. 前缀
+   */
+  async getApiDetail(name) {
+    try {
+      console.log(`\n📖 精确查询 API: ${name}`);
+
+      const response = await this.sendRequestWithRetry({
+        jsonrpc: '2.0',
+        id: ++this.requestId,
+        method: 'tools/call',
+        params: {
+          name: 'get_api_detail',
+          arguments: {
+            name: name, // e.g. "Camera" 或 "Camera.worldToViewportPoint"
+            version: this.headers['LAYA_VERSION'],
+          }
+        }
+      });
+
+      const contents = this.extractTextContent(response.result);
+
+      if (!contents.length) {
+        return { success: false, context: '' };
+      }
+
+      const formatted = contents.map(c => {
+        try {
+          const data = JSON.parse(c);
+          const parts = [];
+
+          if (data.name) parts.push(`**${data.name}**`);
+          if (data.type) parts.push(`(${data.type})`);
+          if (data.description) parts.push(`\n${data.description}`);
+          if (data.signature) parts.push(`\n\`\`\`typescript\n${data.signature}\n\`\`\``);
+
+          if (data.members?.length) {
+            parts.push('\n**成员：**');
+            data.members.slice(0, 10).forEach(m => {
+              parts.push(`- \`${m.name}\`: ${m.description || ''}`);
+            });
+          }
+
+          return parts.join(' ');
+        } catch {
+          return c;
+        }
+      });
+
+      return {
+        success: true,
+        context: `### API 详情: ${name}\n\n${formatted.join('\n\n')}`,
+        raw: response.result
+      };
+
+    } catch (error) {
+      console.error(`   ❌ getApiDetail 失败:`, error.message);
+      return { success: false, context: '' };
+    }
+  }
+
   async searchDocumentation(query, options = {}) {
     if (!this.connected) {
       console.warn('⚠️  MCP 未连接');
@@ -107,10 +232,10 @@ class LayaMCPClient {
       // 使用 query_docs 工具搜索文档概念和教程
       if (!this.availableTools?.has('query_docs')) {
         console.warn('⚠️  服务器没有提供 query_docs 工具');
-        return { success: false, results: [], context: this.buildFallbackContext(query) };
+        return { success: false, results: [], context: '' };
       }
 
-      const response = await this.sendRequest({
+      const response = await this.sendRequestWithRetry({
         jsonrpc: '2.0',
         id: ++this.requestId,
         method: 'tools/call',
@@ -146,7 +271,7 @@ class LayaMCPClient {
 
       const context = parsedDocs.length > 0
         ? parsedDocs.join('\n\n---\n\n')
-        : this.buildFallbackContext(query);
+        : '';  // 修复：返回空字符串，不返回fallback
 
       // 如果没有找到实际结果，返回false以触发重试
       const hasRealResults = parsedDocs.length > 0;
@@ -163,7 +288,7 @@ class LayaMCPClient {
       return {
         success: false,
         results: [],
-        context: this.buildFallbackContext(query),
+        context: '',  // 修复：返回空字符串，不返回fallback
         error: error.message
       };
     }
@@ -184,7 +309,7 @@ class LayaMCPClient {
         return { success: false, results: [], context: '' };
       }
 
-      const response = await this.sendRequest({
+      const response = await this.sendRequestWithRetry({
         jsonrpc: '2.0',
         id: ++this.requestId,
         method: 'tools/call',
@@ -227,7 +352,7 @@ class LayaMCPClient {
       return {
         success: hasRealResults,
         results: apis,
-        context: formatted.length > 0 ? formatted.join('\n\n') : '',
+        context: formatted.length > 0 ? formatted.join('\n\n') : '',  // 修复：空结果返回空字符串
         raw: response.result
       };
 
@@ -236,7 +361,7 @@ class LayaMCPClient {
       return {
         success: false,
         results: [],
-        context: '',
+        context: '',  // 修复：返回空字符串，不返回fallback
         error: error.message
       };
     }
@@ -256,20 +381,9 @@ class LayaMCPClient {
     return contents;
   }
 
-  buildFallbackContext(query) {
-    return `
-## 📚 参考资料
-
-**查询关键词**: ${query}
-
-**建议**:
-- 查看 [LayaAir 官方文档](https://layaair.com/)
-- 访问 [LayaAir 3.x 文档中心](https://layaair.ldc2.layabox.com/layaair3.x/)
-`;
-  }
-
   async disconnect() {
     this.connected = false;
+    this.sessionId = null;
     this.client = null;
     console.log('👋 MCP 连接已关闭');
   }
