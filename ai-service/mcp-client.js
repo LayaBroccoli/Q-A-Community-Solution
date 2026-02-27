@@ -148,8 +148,11 @@ class LayaMCPClient {
         ? parsedDocs.join('\n\n---\n\n')
         : this.buildFallbackContext(query);
 
+      // 如果没有找到实际结果，返回false以触发重试
+      const hasRealResults = parsedDocs.length > 0;
+
       return {
-        success: true,
+        success: hasRealResults,
         results: parsedDocs,
         context: context,
         raw: response.result
@@ -218,8 +221,11 @@ class LayaMCPClient {
         }
       });
 
+      // 检查是否有实际结果
+      const hasRealResults = apis.length > 0 && formatted.length > 0;
+
       return {
-        success: true,
+        success: hasRealResults,
         results: apis,
         context: formatted.length > 0 ? formatted.join('\n\n') : '',
         raw: response.result

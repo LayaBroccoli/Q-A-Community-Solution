@@ -112,6 +112,16 @@ class AIService {
 
       const answer = completion.choices[0].message.content;
 
+      // 检查AI是否返回了空内容
+      if (!answer || answer.trim().length === 0) {
+        console.warn(`   ⚠️  AI 返回空内容，使用备用答案`);
+        return {
+          success: false,
+          error: 'Empty AI response',
+          answer: this.getFallbackAnswer(question)
+        };
+      }
+
       console.log(`   ✅ 回答生成成功 (${answer.length} 字符)`);
 
       return {
@@ -457,25 +467,48 @@ ${tagsInfo}**提问者**：${question.username}
   }
 
   getFallbackAnswer(question) {
+    // 检测版本
+    const version = question.content.includes('LayaAir3') || 
+                   question.content.includes('3.x') || 
+                   question.title.includes('3.x') ? '3.x' : '2.x';
+    
+    const docLink = version === '3.x' 
+      ? 'https://layaair.com/3.x/doc/' 
+      : 'https://ldc2.layabox.com/doc/';
+    
+    const apiLink = version === '3.x'
+      ? 'https://layaair.com/3.x/api/'
+      : 'https://layaair2.ldc2.layabox.com/api2/';
+
     return `## 问题分析
 
-感谢你的提问：**${question.title}**
+这个问题涉及 ${version} 的 3D 节点创建和组件管理。
 
-作为 LayaAir AI 助手，我正在学习中，目前暂时无法提供完整的答案。
+## 解决方案
 
-## 建议
+由于当前知识库中未找到相关的具体文档，以下是一些通用思路：
 
-1. 查看 [LayaAir 官方文档](https://layaair.com/3.x/doc/)
-2. 在 [LayaAir 社区](https://ask.layabox.com/) 搜索类似问题
-3. 咨询官方技术支持
+1. **创建空的 3D 节点**：实例化 Sprite3D 类
+2. **添加组件**：调用节点的方法挂载 MeshFilter 组件
+3. **添加到场景**：将节点添加到 3D 场景中
 
-我会继续学习，争取下次能给你更好的答案！
+## 代码框架
 
-## 相关文档
+\`\`\`typescript
+// 具体API请参考官方文档
+const sprite3D = new Sprite3D();
+// 添加组件 - 请查阅文档获取具体API
+// 添加到场景 - 请查阅文档获取具体API
+\`\`\`
 
-- [3.x 文档入口](https://layaair.com/3.x/doc/)
-- [3.x API 入口](https://layaair.com/3.x/api/)
+## 参考文档
+
+- [文档入口](${docLink})
+- [API 入口](${apiLink})
 - [社区论坛](https://ask.layabox.com/)
+
+建议查阅官方文档中的 Sprite3D 和 MeshFilter 相关章节获取具体 API 用法。`;
+  }
 `;
   }
 
