@@ -509,8 +509,6 @@ const sprite3D = new Sprite3D();
 
 建议查阅官方文档中的 Sprite3D 和 MeshFilter 相关章节获取具体 API 用法。`;
   }
-`;
-  }
 
   async testConnection() {
     try {
