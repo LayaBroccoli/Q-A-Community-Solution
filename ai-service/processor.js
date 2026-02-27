@@ -27,8 +27,48 @@ class QuestionProcessor {
     const noiseWords = new Set([
       '怎么', '如何', '我想', '实现', '请问', '关于', 'LayaAir', '引擎',
       '什么', '怎么', '怎么写', '如何写', '怎样', '吗', '呢', '啊',
-      '使用', '通过', '可以', '需要', '有没有', '是否', '问题'
+      '使用', '通过', '可以', '需要', '有没有', '是否', '问题',
+      '一个', '这个', '那个', '功能', '方法', '代码'
     ]);
+
+    // 中文概念到英文API的映射（v4.0优化）
+    const conceptToApi = {
+      // 事件相关
+      '点击事件': 'Event CLICK on',
+      '点击': 'CLICK',
+      '事件': 'Event',
+      '事件监听': 'EventListener on',
+      '监听': 'on',
+      '触发': 'trigger',
+      '回调': 'callback',
+      '回调函数': 'callback function',
+      
+      // 动画相关
+      '动画': 'Animation',
+      '播放动画': 'play Animation',
+      '帧动画': 'frameAnimation',
+      '补间动画': 'Tween',
+      
+      // 物理相关
+      '物理引擎': 'Physics',
+      '碰撞': 'Collision',
+      '刚体': 'Rigidbody',
+      
+      // UI相关
+      '文本': 'Text',
+      '按钮': 'Button',
+      '输入框': 'TextInput',
+      '列表': 'List',
+      
+      // 常见动作
+      '创建': 'create',
+      '添加': 'add',
+      '移除': 'remove',
+      '删除': 'destroy',
+      '加载': 'load',
+      '显示': 'show',
+      '隐藏': 'hide'
+    };
 
     // 提取API名称（英文类名，不加Laya.前缀）
     const extractApiNames = (text) => {
@@ -44,22 +84,44 @@ class QuestionProcessor {
         );
     };
 
+    // 识别中文概念（新增）
+    const extractConcepts = (text) => {
+      const concepts = [];
+      for (const [chinese, english] of Object.entries(conceptToApi)) {
+        if (text.includes(chinese)) {
+          // 将英文短语按空格拆分成多个关键词
+          const words = english.split(/\s+/);
+          concepts.push(...words);
+        }
+      }
+      return [...new Set(concepts)]; // 去重
+    };
+
     // 拆原子：从标题和内容中提取独立技术点
     const titleApis = extractApiNames(title);
     const cleanContent = stripHtml(content);
     const contentApis = extractApiNames(cleanContent);
 
-    // 合并去重，最多4个词
-    const allApis = [...new Set([...titleApis, ...contentApis])]
-      .slice(0, 4)
+    // 提取中文概念对应的英文API
+    const titleConcepts = extractConcepts(title);
+    const contentConcepts = extractConcepts(cleanContent);
+
+    // 合并所有关键词：API名称 + 概念映射
+    const allApis = [...new Set([
+      ...titleApis,
+      ...contentApis,
+      ...titleConcepts,
+      ...contentConcepts
+    ])]
+      .slice(0, 6)  // 增加到6个关键词
       .filter(name => !name.includes('Laya')); // 去除带Laya前缀的
 
-    // 如果找到API名称，直接使用
+    // 如果找到关键词，直接使用
     if (allApis.length > 0) {
       return allApis.join(' ');
     }
 
-    // 如果没有找到API名称，提取核心关键词（去噪音）
+    // 如果没有找到关键词，提取核心词（去噪音）
     const titleWords = title
       .replace(/[？?！!，,。.\s]/g, ' ')
       .split(/\s+/)
