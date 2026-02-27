@@ -467,10 +467,27 @@ ${tagsInfo}**提问者**：${question.username}
   }
 
   getFallbackAnswer(question) {
-    // 检测版本
-    const version = question.content.includes('LayaAir3') || 
-                   question.content.includes('3.x') || 
-                   question.title.includes('3.x') ? '3.x' : '2.x';
+    // 检测版本（优先检查tags，其次检查内容）
+    let version = '2.x'; // 默认
+
+    if (question.tags && Array.isArray(question.tags)) {
+      // 优先从tags判断
+      if (question.tags.includes('LayaAir3') || question.tags.includes('3.x')) {
+        version = '3.x';
+      } else if (question.tags.includes('LayaAir2') || question.tags.includes('2.x')) {
+        version = '2.x';
+      }
+    }
+
+    // 如果tags没有明确版本，检查内容
+    if (version === '2.x') {
+      const text = (question.title + ' ' + question.content).toLowerCase();
+      if (text.includes('layaair3') || text.includes('3.x') || 
+          text.includes('3.0') || text.includes('3.1') || 
+          text.includes('3.2') || text.includes('3.3') || text.includes('3.4')) {
+        version = '3.x';
+      }
+    }
     
     const docLink = version === '3.x' 
       ? 'https://layaair.com/3.x/doc/' 
