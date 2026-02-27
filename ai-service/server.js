@@ -9,14 +9,27 @@ const db = new Database();
 const processor = new QuestionProcessor(db);
 const PORT = process.env.PORT || 3000;
 
-// 队列系统
+// 队列系统 - 严格串行处理
 class ProcessingQueue {
   constructor() {
     this.queue = [];
     this.processing = false;
+    this.processed = new Set(); // 记录已处理的讨论ID
   }
 
   async add(discussionId) {
+    // 检查是否已经在队列中
+    if (this.queue.includes(discussionId)) {
+      console.log(`⏭️  讨论 #${discussionId} 已在队列中，跳过`);
+      return;
+    }
+
+    // 检查是否正在处理
+    if (this.processed.has(discussionId)) {
+      console.log(`⏭️  讨论 #${discussionId} 已处理过，跳过`);
+      return;
+    }
+
     this.queue.push(discussionId);
     console.log(`📥 队列: 加入讨论 #${discussionId}, 当前队列长度: ${this.queue.length}`);
 
@@ -33,14 +46,44 @@ class ProcessingQueue {
       console.log(`\n⚙️  处理队列中... 剩余: ${this.queue.length}`);
 
       try {
+        // 标记为正在处理
+        this.processed.add(discussionId);
+
         await processor.processDiscussion(discussionId);
+
+        console.log(`✅ 讨论 #${discussionId} 处理完成`);
       } catch (error) {
         console.error(`❌ 处理讨论 #${discussionId} 失败:`, error.message);
+
+        // 从已处理集合中移除，允许重试
+        this.processed.delete(discussionId);
+
+        // 可以选择重新加入队列重试
+        // this.queue.push(discussionId);
       }
+
+      // 处理完一个后，等待一小段时间再处理下一个
+      // 避免连续快速请求导致资源紧张
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
     console.log('\n✅ 队列处理完成');
     this.processing = false;
+
+    // 清理已处理集合（保留最近100个）
+    if (this.processed.size > 100) {
+      const entries = Array.from(this.processed);
+      this.processed = new Set(entries.slice(-100));
+    }
+  }
+
+  // 获取队列状态
+  getStatus() {
+    return {
+      queueLength: this.queue.length,
+      processing: this.processing,
+      processedCount: this.processed.size
+    };
   }
 }
 
@@ -94,13 +137,21 @@ app.post('/webhook/discussion', async (req, res) => {
 
 // 健康检查
 app.get('/health', (req, res) => {
+  const queueStatus = queue.getStatus();
+
   res.json({
     status: 'ok',
     service: 'laya-ask-ai-service',
     timestamp: new Date().toISOString(),
     queue: {
-      length: queue.queue.length,
-      processing: queue.processing
+      length: queueStatus.queueLength,
+      processing: queueStatus.processing,
+      processedCount: queueStatus.processedCount,
+      message: queueStatus.processing
+        ? `正在处理，剩余 ${queueStatus.queueLength} 个讨论`
+        : queueStatus.queueLength > 0
+        ? `队列中有 ${queueStatus.queueLength} 个讨论等待处理`
+        : '队列空闲'
     }
   });
 });
