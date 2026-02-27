@@ -185,25 +185,44 @@ class QuestionProcessor {
       let mcpDocResult = { success: false, context: '' };
       let mcpCodeResult = { success: false, context: '' };
 
-      // 尝试1: 使用原始关键词
-      console.log(`   📌 尝试1: 搜索 "${searchQuery}"`);
-      mcpDocResult = await this.mcpClient.searchDocumentation(searchQuery);
-      mcpCodeResult = await this.mcpClient.searchCode(searchQuery);
+      // 检查搜索查询是否包含多个关键词
+      const keywords = searchQuery.split(' ').filter(k => k.length > 0);
 
-      // 如果失败，尝试2: 缩短关键词（取前2个）
-      if (!mcpDocResult.success && !mcpCodeResult.success) {
-        const shortQuery = searchQuery.split(' ').slice(0, 2).join(' ');
-        console.log(`   📌 尝试2: 缩短为 "${shortQuery}"`);
-        mcpDocResult = await this.mcpClient.searchDocumentation(shortQuery);
-        mcpCodeResult = await this.mcpClient.searchCode(shortQuery);
-      }
+      if (keywords.length > 1) {
+        // 多个关键词：分别搜索每个关键词，然后合并结果
+        console.log(`   📌 检测到${keywords.length}个关键词，分别搜索...`);
 
-      // 如果还失败，尝试3: 只用第一个词
-      if (!mcpDocResult.success && !mcpCodeResult.success) {
-        const firstWord = searchQuery.split(' ')[0];
-        console.log(`   📌 尝试3: 只用 "${firstWord}"`);
-        mcpDocResult = await this.mcpClient.searchDocumentation(firstWord);
-        mcpCodeResult = await this.mcpClient.searchCode(firstWord);
+        const allDocResults = [];
+        const allCodeResults = [];
+
+        for (let i = 0; i < keywords.length; i++) {
+          const keyword = keywords[i];
+          console.log(`   📌 搜索${i + 1}/${keywords.length}: "${keyword}"`);
+
+          const docResult = await this.mcpClient.searchDocumentation(keyword);
+          const codeResult = await this.mcpClient.searchCode(keyword);
+
+          if (docResult.success) allDocResults.push(docResult.context);
+          if (codeResult.success) allCodeResults.push(codeResult.context);
+        }
+
+        // 合并所有结果
+        mcpDocResult = {
+          success: allDocResults.length > 0,
+          context: allDocResults.join('\n\n---\n\n')
+        };
+
+        mcpCodeResult = {
+          success: allCodeResults.length > 0,
+          context: allCodeResults.join('\n\n---\n\n')
+        };
+
+        console.log(`   ✅ 合并结果: ${allDocResults.length}个文档 + ${allCodeResults.length}个API`);
+      } else {
+        // 单个关键词：直接搜索
+        console.log(`   📌 搜索 "${searchQuery}"`);
+        mcpDocResult = await this.mcpClient.searchDocumentation(searchQuery);
+        mcpCodeResult = await this.mcpClient.searchCode(searchQuery);
       }
 
       // 合并 MCP 上下文
