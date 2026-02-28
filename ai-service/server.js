@@ -50,7 +50,35 @@ class ProcessingQueue {
         // 标记为正在处理
         this.processed.add(discussionId);
 
-        await processor.processDiscussion(discussionId);
+        // 从数据库获取完整的discussion对象
+        const discussions = await db.query(
+          `SELECT d.id, d.title, p.content as content, u.username as username
+           FROM discussions d
+           JOIN posts p ON d.first_post_id = p.id
+           JOIN users u ON d.user_id = u.id
+           WHERE d.id = ?`,
+          [discussionId]
+        );
+
+        if (discussions.length === 0) {
+          console.log(`   ⚠️  讨论 #${discussionId} 不存在，跳过`);
+          this.processed.delete(discussionId);
+          continue;
+        }
+
+        const discussion = discussions[0];
+
+        // 获取tags
+        const tags = await db.query(
+          `SELECT t.name
+           FROM discussion_tag dt
+           JOIN tags t ON dt.tag_id = t.id
+           WHERE dt.discussion_id = ?`,
+          [discussionId]
+        );
+        discussion.tags = tags.map(t => t.name);
+
+        await processor.processDiscussion(discussion);
 
         console.log(`✅ 讨论 #${discussionId} 处理完成`);
       } catch (error) {
@@ -334,6 +362,59 @@ app.get('/health', (req, res) => {
         : '队列空闲'
     }
   });
+});
+
+// 内部API：手动处理单个discussion（用于重新处理或调试）
+app.post('/api/process-discussion', async (req, res) => {
+  try {
+    const { discussion_id } = req.body;
+
+    if (!discussion_id) {
+      return res.status(400).json({ success: false, error: '缺少discussion_id' });
+    }
+
+    console.log(`\n🔄 手动触发处理讨论 #${discussion_id}`);
+
+    // 从数据库获取完整的discussion对象
+    const discussions = await db.query(
+      `SELECT d.id, d.title, p.content as content, u.username as username
+       FROM discussions d
+       JOIN posts p ON d.first_post_id = p.id
+       JOIN users u ON d.user_id = u.id
+       WHERE d.id = ?`,
+      [discussion_id]
+    );
+
+    if (discussions.length === 0) {
+      return res.status(404).json({ success: false, error: '讨论不存在' });
+    }
+
+    const discussion = discussions[0];
+
+    // 获取tags
+    const tags = await db.query(
+      `SELECT t.name
+       FROM discussion_tag dt
+       JOIN tags t ON dt.tag_id = t.id
+       WHERE dt.discussion_id = ?`,
+      [discussion_id]
+    );
+    discussion.tags = tags.map(t => t.name);
+
+    // 处理讨论
+    await processor.processDiscussion(discussion);
+
+    res.json({
+      success: true,
+      message: `讨论 #${discussion_id} 处理完成`
+    });
+  } catch (error) {
+    console.error('手动处理失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
 // 启动服务器

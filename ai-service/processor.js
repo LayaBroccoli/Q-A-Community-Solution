@@ -30,8 +30,7 @@ class QuestionProcessor {
 
   /**
    * 从帖子标题和正文提炼 MCP 查询列表。
-   * 返回：[{ tool: 'get_api_detail'|'query_api'|'query_docs', query: string }]
-   * 调用方使用 tool 字段路由到对应 MCP 接口。
+   * v4.0 规范：拆原子、去噪音、≤4词、继承链补查
    */
   extractMCPQueries(title, content) {
     const text = (title || '') + ' ' + (content || '');
@@ -62,7 +61,7 @@ class QuestionProcessor {
     const bareClasses = [...text.matchAll(/(?<![.\w])([A-Z][a-zA-Z0-9]{2,})\b/g)];
     bareClasses
         .map(m => m[1])
-        .filter(name => !['LayaAir', 'IDE', 'API', 'HTML', 'URL', 'JSON'].includes(name))
+        .filter(name => !['LayaAir', 'IDE', 'API', 'HTML', 'URL', 'JSON', 'FBX', 'GLTF'].includes(name))
         .slice(0, 3)
         .forEach(name => {
             if (!results.some(r => r.query === name || r.query.startsWith(name + '.'))) {
@@ -76,30 +75,65 @@ class QuestionProcessor {
     );
     if (errorMatch) add('query_api', errorMatch[0].trim().substring(0, 60));
 
-    // ── 5. 继承链断点补查（向量搜索跨不过继承关系，必须显式补）
+    // ── 5. 继承链断点补查（v4.0 新增完整规则）
     const lowerText = text.toLowerCase();
+
+    // 事件/回调相关
     if (['点击', '事件', '监听', '回调', 'click', 'event', 'on(', '.on(']
             .some(k => lowerText.includes(k))) {
         add('get_api_detail', 'EventDispatcher');
     }
-    if (['触摸', '滑动', '手势', 'touch', 'swipe'].some(k => lowerText.includes(k))) {
+
+    // 输入/触摸相关
+    if (['触摸', '滑动', '手势', 'touch', 'swipe', '输入', 'input', '键盘', 'keyboard']
+            .some(k => lowerText.includes(k))) {
         add('get_api_detail', 'Input');
     }
-    if (['碰撞', '物理', '刚体', 'collision', 'rigidbody'].some(k => lowerText.includes(k))) {
-        add('get_api_detail', 'Physics3D');
-    }
-    if (['场景切换', '场景加载', 'loadscene'].some(k => lowerText.includes(k))) {
-        add('get_api_detail', 'Scene');
-    }
-    if (['资源加载', '预加载', 'loader', 'load('].some(k => lowerText.includes(k))) {
-        add('get_api_detail', 'Loader');
-    }
-    if (['定时', '计时', 'timer', 'setinterval', 'settimeout']
+
+    // 物理相关
+    if (['碰撞', '物理', '刚体', 'collision', 'rigidbody', '物理引擎', 'physics']
             .some(k => lowerText.includes(k))) {
-        add('get_api_detail', 'Timer');
+        add('get_api_detail', 'Physics3D');
+        add('get_api_detail', 'Physics2D');
     }
 
-    // ── 6. 标题关键词 → query_docs
+    // 场景相关
+    if (['场景切换', '场景加载', 'loadscene', 'openscene', '场景管理', 'scene']
+            .some(k => lowerText.includes(k))) {
+        add('get_api_detail', 'Scene');
+        add('get_api_detail', 'Scene2D');
+        add('get_api_detail', 'Scene3D');
+    }
+
+    // 资源加载相关
+    if (['资源加载', '预加载', 'loader', 'load(', '资源管理', 'asset']
+            .some(k => lowerText.includes(k))) {
+        add('get_api_detail', 'Loader');
+    }
+
+    // 定时器相关
+    if (['定时', '计时', 'timer', 'setinterval', 'settimeout', '帧循环', 'frame_loop']
+            .some(k => lowerText.includes(k))) {
+        add('get_api_detail', 'Timer');
+        add('get_api_detail', 'Stat');
+    }
+
+    // 动画相关
+    if (['动画', 'animation', 'animator', '骨骼', 'spine', 'dragonbones']
+            .some(k => lowerText.includes(k))) {
+        add('get_api_detail', 'Animator');
+        add('get_api_detail', 'Animation');
+    }
+
+    // UI相关
+    if (['ui', '界面', '按钮', 'button', '列表', 'list', '面板', 'panel', '对话框', 'dialog']
+            .some(k => lowerText.includes(k))) {
+        add('get_api_detail', 'UIComponent');
+        add('get_api_detail', 'Button');
+        add('get_api_detail', 'List');
+    }
+
+    // ── 6. 标题关键词提炼（≤4词）
     const titleKw = this._extractKeywords(title, 4);
     if (titleKw) add('query_docs', titleKw);
 
@@ -109,18 +143,17 @@ class QuestionProcessor {
         if (contentKw) add('query_api', contentKw);
     }
 
+    // 最多返回5个查询
     return results.slice(0, 5);
   }
 
   /**
    * 从文本中提炼技术核心词，去除自然语言噪音。
-   * 依赖模块顶部的 NOISE_WORDS 常量。
-   * @param {string} text
-   * @param {number} maxWords 最多保留几个词
-   * @returns {string}
+   * v4.0 规范：删除噪音词、≤4词、英文类名优先
    */
   _extractKeywords(text, maxWords = 4) {
       if (!text) return '';
+
       // 去 HTML 标签
       let clean = text.replace(/<[^>]*>/g, '');
       // 去标点
@@ -143,8 +176,78 @@ class QuestionProcessor {
   }
 
   /**
+   * 帖子类型判断（v4.0 核心功能）
+   * 返回类型：非技术帖/功能建议/用户已解决/极简帖子/多问题帖子/技术问题
+   */
+  classifyPost(discussion) {
+    const stripHtml = (html) => {
+      return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    };
+
+    const cleanContent = stripHtml(discussion.content);
+    const cleanTitle = discussion.title.trim();
+    const text = (cleanTitle + ' ' + cleanContent).toLowerCase();
+
+    // 调试日志
+    console.log(`   [classifyPost] cleanTitle: "${cleanTitle}"`);
+    console.log(`   [classifyPost] cleanContent: "${cleanContent}"`);
+    console.log(`   [classifyPost] text: "${text}"`);
+
+    // 策略 A：非技术帖（招聘/外包/闲聊/广告）
+    const jobKeywords = ['招聘', '求职', '招人', '找工作', '招聘信息', '外包', '合作'];
+    const chatKeywords = ['大家好', '新人报到', '签到', '闲聊', '聊天'];
+    if (jobKeywords.some(kw => text.includes(kw)) ||
+        chatKeywords.some(kw => text.includes(kw))) {
+      return '非技术帖';
+    }
+
+    // 策略 B：功能建议（v4.0规范）
+    // 匹配模式：关键词可以不连续，但要都出现在text中
+    const suggestKeywordGroups = [
+      ['希望', '支持'],  // "希望...支持"
+      ['建议', '增加'],  // "建议...增加"
+      ['能不能', '加'],  // "能不能...加"
+      ['能不能', '支持'], // "能不能...支持"
+      ['期待'],
+      ['希望', '有'],    // "希望...有"
+      ['功能', '建议'],
+      ['建议'],
+      ['能不能', '实现']
+    ];
+
+    for (const group of suggestKeywordGroups) {
+      if (group.every(kw => text.includes(kw))) {
+        console.log(`   [classifyPost] 匹配到功能建议关键词: ${group.join(' + ')}`);
+        return '功能建议';
+      }
+    }
+
+    // 策略 C：用户已自行解决
+    const solvedKeywords = ['搞定了', '已解决', '解决了', '我搞错了', '是我错了', '找到原因了',
+                           '已修复', '没问题了', '可以了', '成功了'];
+    if (solvedKeywords.some(kw => text.includes(kw))) {
+      return '用户已解决';
+    }
+
+    // 策略 D：极简帖子
+    if (cleanTitle.length < 5 && cleanContent.length < 20) {
+      return '极简帖子';
+    }
+
+    // 策略 E：多问题帖子（正文含 ≥ 3 个独立问题）
+    const questionMarks = (cleanContent.match(/\?|？|怎么|如何|为什么/g) || []).length;
+    if (questionMarks >= 3) {
+      return '多问题帖子';
+    }
+
+    // 策略 F：技术问题（默认）
+    return '技术问题';
+  }
+
+  /**
    * 预过滤检查（v4.0 规范）
-   * 以下情况不回复：吐槽、建议、招聘、灌水、内容太少、纯截图
+   * 以下情况跳过：纯灌水/广告、已有官方人工回复且已解决、纯截图无文字
+   * 注意：功能建议、求职招聘不跳过
    */
   shouldSkipReply(discussion) {
     const stripHtml = (html) => {
@@ -154,32 +257,19 @@ class QuestionProcessor {
     const cleanContent = stripHtml(discussion.content);
     const cleanTitle = discussion.title.trim();
 
-    // 检查是否已有人工回复
-    // 注意：这里不检查，因为这是首次回复
-    
-    // 帖子内容少于20字且无代码
-    if (cleanContent.length < 20 && !cleanContent.includes('```') && !cleanContent.includes('代码')) {
-      console.log(`   ⏭️  内容太少（${cleanContent.length}字），跳过`);
+    // 检查是否已有人工回复（这部分在实际处理中会检查）
+    // 这里暂时跳过，因为这是首次回复逻辑
+
+    // 纯灌水/广告检测
+    const spamKeywords = ['加群', '代练', '卖号', '外挂', '刷单', '菠菜', '博彩'];
+    if (spamKeywords.some(kw => cleanContent.includes(kw) || cleanTitle.includes(kw))) {
+      console.log(`   ⏭️  识别为灌水/广告，跳过`);
       return true;
     }
 
-    // 检查是否是纯吐槽/灌水（简单判断）
-    const spamKeywords = ['吐槽', '无语', '坑爹', '垃圾', '难受', '烦'];
-    const hasSpamKeyword = spamKeywords.some(kw => 
-      cleanContent.includes(kw) || cleanTitle.includes(kw)
-    );
-    if (hasSpamKeyword && cleanContent.length < 50) {
-      console.log(`   ⏭️  识别为吐槽/灌水，跳过`);
-      return true;
-    }
-
-    // 检查是否是招聘/求职
-    const jobKeywords = ['招聘', '求职', '招人', '找工作', '招聘信息'];
-    const isJobPost = jobKeywords.some(kw => 
-      cleanTitle.includes(kw) || cleanContent.includes(kw)
-    );
-    if (isJobPost) {
-      console.log(`   ⏭️  招聘/求职帖，跳过`);
+    // 纯截图无文字描述
+    if (cleanContent.length < 10 && !cleanContent.includes('```')) {
+      console.log(`   ⏭️  纯截图无文字描述，跳过`);
       return true;
     }
 
@@ -197,135 +287,153 @@ class QuestionProcessor {
         console.warn('   ⚠️  将不使用知识库上下文');
       }
     }
+    return this.mcpConnected;
   }
 
   /**
-   * 并行执行所有MCP查询，合并结果
-   * @param {string} title
-   * @param {string} content
-   * @returns {Promise<{success: boolean, context: string}>}
+   * 查询 MCP 获取上下文（v4.0 规范）
    */
-  async searchMCP(title, content) {
-    await this.ensureMCPConnected();
+  async queryMCP(title, content) {
+    const mcpConnected = await this.ensureMCPConnected();
+    if (!mcpConnected) return '';
 
     const queries = this.extractMCPQueries(title, content);
+    if (queries.length === 0) return '';
 
-    if (queries.length === 0) {
-      console.log('   ⚠️  没有提取到有效关键词');
-      return { success: false, context: '' };
+    console.log(`\n   🔍 执行 ${queries.length} 个 MCP 查询...`);
+    let mcpContext = '';
+
+    for (const q of queries) {
+      try {
+        console.log(`      [${q.tool}] ${q.query}`);
+        let result = null;
+
+        // 根据tool字段路由到对应的MCP接口
+        if (q.tool === 'get_api_detail') {
+          result = await this.mcpClient.getApiDetail(q.query);
+        } else if (q.tool === 'query_docs') {
+          result = await this.mcpClient.queryDocs(q.query);
+        } else {
+          result = await this.mcpClient.queryApi(q.query);
+        }
+
+        if (result && result.content) {
+          mcpContext += this.formatMCPResult(result);
+          console.log(`         ✅ 找到 ${result.api_entries?.length || 0} 个API, ` +
+                     `${result.doc_links?.length || 0} 个文档`);
+        } else {
+          console.log(`         ⚠️  无结果`);
+        }
+
+        // 短暂延迟，避免过快请求
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+      } catch (error) {
+        console.warn(`         ❌ 查询失败: ${error.message}`);
+      }
     }
 
-    console.log(`\n   🔍 MCP 查询列表 (${queries.length}条):`);
-    queries.forEach((q, i) => {
-      console.log(`      ${i + 1}. [${q.tool}] "${q.query}"`);
-    });
-
-    // 并行执行所有查询
-    const promises = queries.map(q =>
-      this.mcpClient.search(q.tool, q.query).catch(err => {
-        console.warn(`      ⚠️  [${q.tool}] "${q.query}" 失败: ${err.message}`);
-        return null;
-      })
-    );
-
-    const results = await Promise.all(promises);
-
-    // 合并非空结果
-    const contexts = results
-      .filter(r => r && r.success && r.context)
-      .map(r => r.context);
-
-    if (contexts.length === 0) {
-      console.log('   ⚠️  所有查询均无结果');
-      return { success: false, context: '' };
-    }
-
-    const mergedContext = contexts.join('\n\n---\n\n');
-    console.log(`   ✅ 查询成功，合并上下文 ${mergedContext.length} 字符`);
-
-    return { success: true, context: mergedContext };
+    return mcpContext;
   }
 
-  async processDiscussion(discussionId) {
-    try {
-      console.log(`\n⚙️  处理讨论 #${discussionId}...`);
+  /**
+   * 格式化 MCP 结果为 Markdown（v4.0 规范）
+   */
+  formatMCPResult(result) {
+    let out = '';
 
-      // 1. 获取讨论信息（带重试机制，等待数据库写入完成）
-      let discussion = null;
-      let retries = 0;
-      const maxRetries = 5;
-
-      while (!discussion && retries < maxRetries) {
-        discussion = await this.db.getDiscussionById(discussionId);
-        
-        if (!discussion) {
-          retries++;
-          if (retries < maxRetries) {
-            console.log(`   ⏳ 等待讨论数据写入... (${retries}/${maxRetries})`);
-            await new Promise(resolve => setTimeout(resolve, 1000)); // 等待1秒
-          }
+    if (result.api_entries && result.api_entries.length > 0) {
+      out += '### API 参考\n\n';
+      for (const api of result.api_entries) {
+        out += `**${api.name}** (${api.type}) - ${api.description}\n`;
+        if (api.signature) {
+          out += '```typescript\n' + api.signature + '\n```\n';
         }
       }
+      out += '\n';
+    }
 
-      if (!discussion) {
-        console.log(`   ❌ 讨论不存在（已重试${maxRetries}次）`);
-        return;
+    if (result.doc_content && result.doc_content.trim()) {
+      out += '### 文档内容\n\n';
+      out += result.doc_content.substring(0, 2000) + '\n\n';
+    }
+
+    if (result.doc_links && result.doc_links.length > 0) {
+      out += '### 文档链接\n\n';
+      for (const link of result.doc_links) {
+        out += `- [${link.title}](${link.url})\n`;
+      }
+      out += '\n';
+    }
+
+    return out;
+  }
+
+  /**
+   * 处理单个讨论（v4.0 完整流程）
+   */
+  async processDiscussion(discussion) {
+    try {
+      console.log(`\n📋 处理讨论 #${discussion.id}: ${discussion.title}`);
+      console.log(`   用户: ${discussion.username}`);
+      console.log(`   链接: http://43.128.56.125/d/${discussion.id}`);
+
+      // 1. 帖子类型判断（v4.0 核心，必须先执行）
+      const postType = this.classifyPost(discussion);
+      console.log(`   📝 帖子类型: ${postType}`);
+
+      // 2. 预过滤检查（只对技术问题执行）
+      // 功能建议、非技术帖、用户已解决、极简帖子、多问题帖子都不过滤
+      if (postType === '技术问题') {
+        if (this.shouldSkipReply(discussion)) {
+          console.log(`   ⏭️  跳过此帖\n`);
+          return;
+        }
+      } else {
+        console.log(`   ℹ️  ${postType}，跳过预过滤检查`);
       }
 
-      console.log(`   📝 标题: ${discussion.title}`);
-      console.log(`   👤 作者: ${discussion.username}`);
-      console.log(`   📄 内容: ${discussion.content.substring(0, 100)}...`);
+      // 3. 版本检测
+      const detectedVersion = this.aiService.detectVersion(discussion.title, discussion.content);
+      console.log(`   🔧 版本: ${detectedVersion}`);
 
-      // 2. 预过滤检查
-      if (this.shouldSkipReply(discussion)) {
-        console.log(`   ⏭️  预过滤：跳过此帖子`);
-        return;
-      }
+      // 3. MCP 检索
+      console.log(`\n   📚 检索知识库...`);
+      const mcpContext = await this.queryMCP(discussion.title, discussion.content);
+      const hasMcp = mcpContext.trim().length > 0;
+      console.log(`   ${hasMcp ? '✅' : '⚠️ '}  MCP 结果: ${hasMcp ? '有' : '无'}`);
 
-      // 3. 检查是否已有 AI 回复
-      const existingAnswers = await this.db.query(
-        `SELECT COUNT(*) as count FROM posts WHERE discussion_id = ? AND user_id = ?`,
-        [discussionId, this.aiUserId]
+      // 4. 生成 AI 回答（v4.0 规范）
+      console.log(`\n   🤖 调用 AI 生成回答...`);
+      const result = await this.aiService.generateAnswer(
+        discussion,
+        mcpContext,
+        postType  // 传入帖子类型
       );
 
-      if (existingAnswers[0].count > 0) {
-        console.log(`   ⏭️  已有 AI 回复，跳过`);
+      if (!result.success) {
+        console.log(`   ❌ AI 生成失败，跳过回复`);
         return;
       }
 
-      // 4. 查询 MCP 知识库（如果可用）
-      console.log(`\n   📚 查询 LayaAir 知识库...`);
-      const mcpResult = await this.searchMCP(discussion.title, discussion.content);
-      const mcpContext = mcpResult.success ? mcpResult.context : '';
-
-      // 5. 生成 AI 回答（带 MCP 上下文）
-      console.log(`\n   🤖 调用 AI 生成回答...`);
-      const result = await this.aiService.generateAnswer(discussion, mcpContext);
-
-      if (!result.success) {
-        console.log(`   ❌ AI 生成失败，使用备用答案`);
-      }
-
-      // 6. 发布回答
+      // 5. 发布回答
       const answer = result.answer;
-
-      // 将 Markdown 转换为 HTML
       const htmlAnswer = marked.parse(answer);
-
-      // 包装在 <t> 标签中（Flarum 格式要求）
       const formattedAnswer = `<t>${htmlAnswer}</t>`;
 
       console.log(`\n   📤 发布回答到论坛...`);
-      
+
+      const discussionId = discussion.id;
+
       // 获取当前讨论的帖子数量
       const postCount = await this.db.query(
         `SELECT COUNT(*) as count FROM posts WHERE discussion_id = ?`,
         [discussionId]
       );
-      
+
       // AI 回复的 number = 当前帖子数 + 1
       const postNumber = postCount[0].count + 1;
-      
+
       const insertResult = await this.db.query(
         `INSERT INTO posts (discussion_id, user_id, content, created_at, is_approved, number, type)
          VALUES (?, ?, ?, UTC_TIMESTAMP(), 1, ?, 'comment')`,
