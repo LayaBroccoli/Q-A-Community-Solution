@@ -2,6 +2,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const Database = require('./db');
 const QuestionProcessor = require('./processor');
+const { createRatingRoutes } = require('./rating-service');
 require('dotenv').config();
 
 const app = express();
@@ -92,6 +93,23 @@ const queue = new ProcessingQueue();
 // 中间件
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+
+// CORS支持（用于Flarum前端调用）
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
+// 静态文件服务（用于前端组件）
+app.use('/public', express.static('public'));
+
+// AI评分API路由
+app.use('/api', createRatingRoutes(db));
 
 // Webhook 端点
 app.post('/webhooks', async (req, res) => {
