@@ -222,12 +222,12 @@ app.post('/proxy-rating', async (req, res) => {
       });
     }
 
-    // 插入评分
+    // 插入评分（将undefined转为null）
     await db.query(
       `INSERT INTO ai_ratings
        (post_id, discussion_id, user_id, rating_type, rating_value, ip_address)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [post_id, discussion_id, user_id, rating, ratingTypes[rating], req.ip]
+      [post_id, discussion_id || null, user_id || null, rating, ratingTypes[rating], req.ip]
     );
 
     console.log('✅ 评分已插入数据库');
@@ -260,7 +260,7 @@ app.post('/proxy-rating', async (req, res) => {
        not_helpful_count = VALUES(not_helpful_count),
        irrelevant_count = VALUES(irrelevant_count),
        average_score = VALUES(average_score)`,
-      [post_id, discussion_id, stat.total, stat.helpful, stat.partial,
+      [post_id, discussion_id || null, stat.total, stat.helpful, stat.partial,
        stat.not_helpful, stat.irrelevant, stat.avg_score || 0]
     );
 
