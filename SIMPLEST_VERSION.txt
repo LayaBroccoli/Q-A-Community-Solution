@@ -1,0 +1,141 @@
+🔧 **AI评分系统 - 最简化版（不依赖app对象）**
+
+**完整代码，直接复制粘贴**
+
+=======================================
+代码开始
+=======================================*/
+
+<script>
+(function() {
+  console.log('[AI评分] 启动（最简化版）');
+
+  const CONFIG = {
+    apiBaseUrl: 'http://43.128.56.125:8080/proxy-rating',
+    aiUsername: 'AI助手'
+  };
+
+  function addRatingBox() {
+    document.querySelectorAll('article.CommentPost.Post').forEach(function(post) {
+      if (post.querySelector('.ai-rating-box')) return;
+
+      const username = post.querySelector('.username');
+      if (!username || username.textContent.trim() !== CONFIG.aiUsername) return;
+
+      const container = post.closest('[data-id]');
+      const postId = container?.dataset?.id;
+      if (!postId) return;
+
+      console.log('✅ 找到AI回复，帖子ID:', postId);
+
+      const box = document.createElement('div');
+      box.innerHTML =
+        '<div style="margin-top:15px;padding:15px;background:#f8f9fa;border-radius:8px;border:1px solid #e0e0e0">' +
+          '<div style="font-size:14px;font-weight:600;margin-bottom:10px">📊 这个回答有帮助吗？</div>' +
+          '<div style="display:flex;gap:8px">' +
+            '<button onclick="window.submitAIRating(this,' + postId + ',\'helpful\')" style="flex:1;padding:10px;border:2px solid #ddd;border-radius:8px;background:#fff;cursor:pointer">✅ 解决</button>' +
+            '<button onclick="window.submitAIRating(this,' + postId + ',\'partial\')" style="flex:1;padding:10px;border:2px solid #ddd;border-radius:8px;background:#fff;cursor:pointer">⚠️ 部分</button>' +
+            '<button onclick="window.submitAIRating(this,' + postId + ',\'not_helpful\')" style="flex:1;padding:10px;border:2px solid #ddd;border-radius:8px;background:#fff;cursor:pointer">❌ 未解决</button>' +
+            '<button onclick="window.submitAIRating(this,' + postId + ',\'irrelevant\')" style="flex:1;padding:10px;border:2px solid #ddd;border-radius:8px;background:#fff;cursor:pointer">🤔 不相关</button>' +
+          '</div>' +
+          '<div class="feedback" style="margin-top:10px;font-size:13px;color:#666"></div>' +
+        '</div>';
+
+      post.querySelector('.Post-body')?.appendChild(box);
+      console.log('✅ 评分框已添加');
+    });
+  }
+
+  // 全局函数，不依赖闭包
+  window.submitAIRating = function(btn, postId, rating) {
+    const box = btn.closest('.ai-rating-box') || btn.parentElement.parentElement;
+    const feedback = box.querySelector('.feedback');
+    const buttons = box.querySelectorAll('button');
+
+    buttons.forEach(b => b.disabled = true);
+    feedback.textContent = '提交中...';
+
+    console.log('=== 提交评分 ===');
+    console.log('帖子ID:', postId, '类型:', typeof postId);
+    console.log('评分:', rating, '类型:', typeof rating);
+
+    const requestData = {
+      post_id: parseInt(postId),
+      rating: rating
+    };
+
+    console.log('请求数据:', requestData);
+
+    fetch(CONFIG.apiBaseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestData)
+    })
+    .then(res => {
+      console.log('响应状态:', res.status);
+      return res.json();
+    })
+    .then(data => {
+      console.log('响应数据:', data);
+      if (data.success) {
+        feedback.textContent = '✅ 感谢您的反馈！';
+        feedback.style.color = '#4caf50';
+        btn.style.opacity = '0.6';
+      } else {
+        feedback.textContent = '❌ ' + data.error;
+        feedback.style.color = '#f44336';
+        buttons.forEach(b => b.disabled = false);
+      }
+    })
+    .catch(err => {
+      console.error('错误:', err);
+      feedback.textContent = '❌ 错误: ' + err.message;
+      feedback.style.color = '#f44336';
+      buttons.forEach(b => b.disabled = false);
+    });
+  };
+
+  addRatingBox();
+  new MutationObserver(addRatingBox).observe(document.body, { childList: true, subtree: true });
+
+  console.log('[AI评分] 启动完成');
+})();
+</script>
+
+=======================================
+代码结束
+=======================================*/
+
+## 📝 关键改进
+
+1. **移除了所有可能为null的参数**
+   - ❌ 不再发送 discussion_id
+   - ❌ 不再发送 user_id
+   - ✅ 只发送必需的 post_id 和 rating
+
+2. **使用全局函数**
+   - `window.submitAIRating` 可以从任何地方调用
+   - 不依赖闭包和app对象
+
+3. **详细的Console日志**
+   - 显示帖子ID和类型
+   - 显示评分类型
+   - 显示完整请求和响应
+
+---
+
+## 🚀 操作步骤
+
+1. Flarum Admin → Appearance → Custom Header
+2. 删除所有旧代码
+3. 粘贴上面的完整代码
+4. Save Changes
+5. 刷新论坛页面
+6. 点击评分按钮
+7. **把Console输出复制给我！**
+
+---
+
+**这次应该能成功了！** 🎉
+
+**如果还有问题，Console日志会告诉我们哪里出错** 🔍

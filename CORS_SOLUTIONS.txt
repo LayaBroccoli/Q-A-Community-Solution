@@ -1,0 +1,140 @@
+🔧 **绕过CORS - 最终解决方案**
+
+如果API跨域有问题，使用这个绕过方法：
+
+=======================================
+方法：通过服务器代理（推荐）
+=======================================
+
+在 ai-service/server.js 中添加代理端点：
+
+```javascript
+// 添加到 server.js 的 webhook 端点之后
+
+// Flarum评分代理（绕过CORS）
+app.post('/proxy-rating', async (req, res) => {
+  try {
+    const { post_id, discussion_id, rating, user_id } = req.body;
+
+    // 直接调用评分服务
+    const RatingService = require('./rating-service');
+    const service = new RatingService(db);
+
+    // 模拟请求对象
+    const mockReq = {
+      body: { post_id, discussion_id, rating, user_id },
+      ip: req.ip
+    };
+
+    // 模拟响应对象
+    let responseData = null;
+    const mockRes = {
+      json: (data) => { responseData = data; },
+      status: (code) => ({ json: (data) => { responseData = data; } })
+    };
+
+    await service.submitRating(mockReq, mockRes);
+
+    if (responseData && responseData.success) {
+      res.json({ success: true, message: responseData.message });
+    } else {
+      res.status(400).json(responseData || { success: false, error: '未知错误' });
+    }
+  } catch (error) {
+    console.error('代理错误:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/proxy-rating/:post_id', async (req, res) => {
+  try {
+    const { post_id } = req.params;
+
+    const result = await db.query(
+      'SELECT * FROM ai_rating_stats WHERE post_id = ?',
+      [post_id]
+    );
+
+    if (result.length > 0) {
+      res.json({ success: true, data: result[0] });
+    } else {
+      res.json({
+        success: true,
+        data: {
+          post_id: parseInt(post_id),
+          total_ratings: 0,
+          helpful_count: 0,
+          partial_count: 0,
+          not_helpful_count: 0,
+          irrelevant_count: 0,
+          average_score: 0
+        }
+      });
+    }
+  } catch (error) {
+    console.error('查询错误:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+```
+
+然后修改Flarum中的API地址为：
+```javascript
+apiBaseUrl: window.location.origin + '/proxy-rating'
+```
+
+=======================================
+方法：使用JSONP（备选）
+=======================================
+
+如果上面不行，在 server.js 添加：
+
+```javascript
+app.get('/api/ratings-jsonp', (req, res) => {
+  const post_id = req.query.post_id;
+
+  db.query('SELECT * FROM ai_rating_stats WHERE post_id = ?', [post_id])
+    .then(results => {
+      const data = results.length > 0 ? results[0] : { post_id, total_ratings: 0 };
+      res.jsonp(req.query.callback, { success: true, data });
+    });
+});
+```
+
+=======================================
+方法：直接数据库查询（最简单）
+=======================================
+
+完全绕过API，直接在Flarum中创建一个隐藏的iframe提交表单：
+
+```javascript
+// 在Flarum中
+function submitRating(postId, rating) {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = 'http://43.128.56.125:3000/rate';  // 新建一个简单端点
+  form.style.display = 'none';
+
+  form.innerHTML = `
+    <input name="post_id" value="${postId}">
+    <input name="rating" value="${rating}">
+    <input name="user_id" value="${app?.session?.user?.id || ''}">
+  `;
+
+  document.body.appendChild(form);
+  form.submit();
+}
+```
+
+然后在server.js添加：
+```javascript
+app.post('/rate', express.urlencoded(), async (req, res) => {
+  // 直接处理评分
+  // 重定向回论坛
+  res.redirect('back');
+});
+```
+
+---
+
+**哪个方法更适合？我推荐方法1（代理）！**

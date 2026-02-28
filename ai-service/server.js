@@ -153,6 +153,168 @@ app.post('/webhook/discussion', async (req, res) => {
   }
 });
 
+// ============================================
+// AI评分代理端点（绕过CORS）
+// ============================================
+
+// 提交评分代理
+app.post('/proxy-rating', async (req, res) => {
+  try {
+    let { post_id, discussion_id, rating, user_id } = req.body;
+
+    console.log('📊 收到评分请求:', { post_id, discussion_id, rating, user_id });
+
+    // 参数验证 - 只验证必需参数
+    if (!post_id) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少帖子ID'
+      });
+    }
+
+    if (!rating) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少评分类型'
+      });
+    }
+
+    // 如果没有discussion_id，尝试从数据库查询
+    if (!discussion_id) {
+      const postResult = await db.query(
+        'SELECT discussion_id FROM posts WHERE id = ?',
+        [post_id]
+      );
+      if (postResult.length > 0) {
+        discussion_id = postResult[0].discussion_id;
+        console.log('✅ 从数据库查询到discussion_id:', discussion_id);
+      }
+    }
+
+    const ratingTypes = {
+      'helpful': 5,
+      'partial': 3,
+      'not_helpful': 1,
+      'irrelevant': 0
+    };
+
+    if (!ratingTypes[rating]) {
+      return res.status(400).json({
+        success: false,
+        error: '无效的评分类型: ' + rating
+      });
+    }
+
+    // 检查是否已评价
+    const checkQuery = user_id 
+      ? 'SELECT id FROM ai_ratings WHERE post_id = ? AND user_id = ?'
+      : 'SELECT id FROM ai_ratings WHERE post_id = ? AND (user_id IS NULL OR user_id = "")';
+    
+    const checkParams = user_id ? [post_id, user_id] : [post_id];
+
+    const existing = await db.query(checkQuery, checkParams);
+
+    if (existing.length > 0) {
+      console.log('⚠️ 用户已评价过');
+      return res.status(400).json({
+        success: false,
+        error: '您已经评价过该回复'
+      });
+    }
+
+    // 插入评分
+    await db.query(
+      `INSERT INTO ai_ratings
+       (post_id, discussion_id, user_id, rating_type, rating_value, ip_address)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [post_id, discussion_id, user_id, rating, ratingTypes[rating], req.ip]
+    );
+
+    console.log('✅ 评分已插入数据库');
+
+    // 更新统计
+    const stats = await db.query(
+      `SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN rating_type = 'helpful' THEN 1 ELSE 0 END) as helpful,
+        SUM(CASE WHEN rating_type = 'partial' THEN 1 ELSE 0 END) as partial,
+        SUM(CASE WHEN rating_type = 'not_helpful' THEN 1 ELSE 0 END) as not_helpful,
+        SUM(CASE WHEN rating_type = 'irrelevant' THEN 1 ELSE 0 END) as irrelevant,
+        AVG(rating_value) as avg_score
+       FROM ai_ratings
+       WHERE post_id = ?`,
+      [post_id]
+    );
+
+    const stat = stats[0];
+
+    await db.query(
+      `INSERT INTO ai_rating_stats
+       (post_id, discussion_id, total_ratings, helpful_count, partial_count,
+        not_helpful_count, irrelevant_count, average_score)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+       total_ratings = VALUES(total_ratings),
+       helpful_count = VALUES(helpful_count),
+       partial_count = VALUES(partial_count),
+       not_helpful_count = VALUES(not_helpful_count),
+       irrelevant_count = VALUES(irrelevant_count),
+       average_score = VALUES(average_score)`,
+      [post_id, discussion_id, stat.total, stat.helpful, stat.partial,
+       stat.not_helpful, stat.irrelevant, stat.avg_score || 0]
+    );
+
+    console.log(`✅ 评分成功: 帖子${post_id}, ${rating}, 用户${user_id || '匿名'}`);
+
+    res.json({
+      success: true,
+      message: '评分成功，感谢您的反馈！'
+    });
+
+  } catch (error) {
+    console.error('评分代理错误:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 查询评分代理
+app.get('/proxy-rating/:post_id', async (req, res) => {
+  try {
+    const { post_id } = req.params;
+
+    const result = await db.query(
+      'SELECT * FROM ai_rating_stats WHERE post_id = ?',
+      [post_id]
+    );
+
+    if (result.length > 0) {
+      res.json({ success: true, data: result[0] });
+    } else {
+      res.json({
+        success: true,
+        data: {
+          post_id: parseInt(post_id),
+          total_ratings: 0,
+          helpful_count: 0,
+          partial_count: 0,
+          not_helpful_count: 0,
+          irrelevant_count: 0,
+          average_score: 0
+        }
+      });
+    }
+  } catch (error) {
+    console.error('查询评分错误:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // 健康检查
 app.get('/health', (req, res) => {
   const queueStatus = queue.getStatus();
