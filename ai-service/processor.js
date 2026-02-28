@@ -134,6 +134,30 @@ class QuestionProcessor {
       }
     }
 
+    // ── 2.7. 事件相关智能查询（新增）
+    // 检测事件相关关键词，自动添加EventDispatcher和Event查询
+    const eventKeywords = ['点击事件', '事件监听', '触发', '回调', 'on(', 'Event', '事件'];
+    const hasEventKeyword = eventKeywords.some(k => text.includes(k));
+
+    if (hasEventKeyword) {
+      // 添加EventDispatcher查询（事件监听基类）
+      if (!seenClasses.has('EventDispatcher')) {
+        add('get_api_detail', 'EventDispatcher');
+        seenClasses.add('EventDispatcher');
+      }
+
+      // 添加Event查询（事件类型）
+      if (!seenClasses.has('Event')) {
+        add('get_api_detail', 'Event');
+        seenClasses.add('Event');
+      }
+
+      // 如果提到"点击"，添加Event.CLICK查询
+      if (text.includes('点击')) {
+        add('query_docs', 'Event.CLICK');
+      }
+    }
+
     // ── 3. 报错信息 → query_api
     const errorMatch = text.match(/(TypeError|ReferenceError|Cannot\s+\w+|未定义)[^\n]{0,60}/i);
     if (errorMatch) {
