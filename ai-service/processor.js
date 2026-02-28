@@ -88,97 +88,84 @@ class QuestionProcessor {
    * 4. 标题提炼 → query_docs
    * 5. 正文补充 → query_api
    */
+  /**
+   * 从帖子标题和正文提炼 MCP 查询列表。
+   * 返回：[{ tool: 'get_api_detail'|'query_api'|'query_docs', query: string }]
+   * 调用方使用 tool 字段路由到对应 MCP 接口。
+   */
   extractMCPQueries(title, content) {
-    const text = title + ' ' + content;
+    const text = (title || '') + ' ' + (content || '');
     const results = [];
     const seen = new Set();
 
     const add = (tool, query) => {
-      const q = query.trim();
+      const q = (query || '').trim();
       if (q && !seen.has(q)) {
         seen.add(q);
         results.push({ tool, query: q });
       }
     };
 
-    // ── 1. Laya.类名.方法名 → get_api_detail（精确，最优先）
-    const classMethods = text.match(/Laya\.([A-Z]\w+\.[a-z]\w+)/g) || [];
-    classMethods.slice(0, 3).forEach(m => {
-      add('get_api_detail', m.replace('Laya.', ''));
-    });
+    // ── 1. Laya.类名.方法名 → get_api_detail（精确，最高优先）
+    const classMethods = [...text.matchAll(/Laya\.([A-Z]\w+\.[a-z]\w+)/g)];
+    classMethods.slice(0, 3).forEach(m => add('get_api_detail', m[1]));
 
     // ── 2. Laya.类名 → get_api_detail
-    const classNames = text.match(/Laya\.([A-Z]\w+)/g) || [];
-    classNames.slice(0, 3).forEach(c => {
-      const name = c.replace('Laya.', '');
-      // 如果这个类还没有被查询过（包括它的方法）
-      if (!results.some(r => r.query.startsWith(name + '.'))) {
-        add('get_api_detail', name);
+    const layaClasses = [...text.matchAll(/Laya\.([A-Z]\w+)/g)];
+    layaClasses.slice(0, 3).forEach(m => {
+      if (!results.some(r => r.query.startsWith(m[1] + '.'))) {
+        add('get_api_detail', m[1]);
       }
     });
 
-    // ── 2.5. 单独的大写类名（无Laya.前缀）→ get_api_detail（新增）
-    // 识别像 Sprite, Animator, Camera 这样的独立类名
-    const standaloneClassPattern = /(?:^|\s)([A-Z][a-zA-Z0-9_]*)\b/g;
-    let match;
-    const seenClasses = new Set(classNames.map(c => c.replace('Laya.', ''))); // 已识别的类
+    // ── 3. 裸类名（无 Laya. 前缀）→ get_api_detail
+    const bareClasses = [...text.matchAll(/(?<![.\w])([A-Z][a-zA-Z0-9]{2,})\b/g)];
+    bareClasses
+      .map(m => m[1])
+      .filter(name => !['LayaAir', 'IDE', 'API', 'HTML', 'URL', 'JSON'].includes(name))
+      .slice(0, 3)
+      .forEach(name => {
+        if (!results.some(r => r.query === name || r.query.startsWith(name + '.'))) {
+          add('get_api_detail', name);
+        }
+      });
 
-    while ((match = standaloneClassPattern.exec(text)) !== null) {
-      const className = match[1];
-      // 过滤：至少3个字符，不是常见英文单词，已识别的类跳过
-      if (className.length >= 3 &&
-          !seenClasses.has(className) &&
-          !['AND', 'OR', 'NOT', 'URL', 'HTML', 'CSS', 'API', 'UI', '3D', '2D', 'ID'].includes(className)) {
-        add('get_api_detail', className);
-        seenClasses.add(className);
-      }
-    }
-
-    // ── 2.7. 事件相关智能查询（新增）
-    // 检测事件相关关键词，自动添加EventDispatcher和Event查询
-    const eventKeywords = ['点击事件', '事件监听', '触发', '回调', 'on(', 'Event', '事件'];
-    const hasEventKeyword = eventKeywords.some(k => text.includes(k));
-
-    if (hasEventKeyword) {
-      // 添加EventDispatcher查询（事件监听基类）
-      if (!seenClasses.has('EventDispatcher')) {
-        add('get_api_detail', 'EventDispatcher');
-        seenClasses.add('EventDispatcher');
-      }
-
-      // 添加Event查询（事件类型）
-      if (!seenClasses.has('Event')) {
-        add('get_api_detail', 'Event');
-        seenClasses.add('Event');
-      }
-
-      // 如果提到"点击"，添加Event.CLICK查询
-      if (text.includes('点击')) {
-        add('query_docs', 'Event.CLICK');
-      }
-    }
-
-    // ── 3. 报错信息 → query_api
+    // ── 4. 报错信息 → query_api
     const errorMatch = text.match(/(TypeError|ReferenceError|Cannot\s+\w+|未定义)[^\n]{0,60}/i);
-    if (errorMatch) {
-      add('query_api', errorMatch[0].trim().substring(0, 60));
+    if (errorMatch) add('query_api', errorMatch[0].trim().substring(0, 60));
+
+    // ── 5. 继承链断点补查（向量搜索跨不过继承关系，必须显式补）
+    const lowerText = text.toLowerCase();
+    if (['点击', '事件', '监听', '回调', 'click', 'event', 'on(', '.on('].some(k => lowerText.includes(k))) {
+      add('get_api_detail', 'EventDispatcher');
+    }
+    if (['触摸', '滑动', '手势', 'touch', 'swipe'].some(k => lowerText.includes(k))) {
+      add('get_api_detail', 'Input');
+    }
+    if (['碰撞', '物理', '刚体', 'collision', 'rigidbody'].some(k => lowerText.includes(k))) {
+      add('get_api_detail', 'Physics3D');
+    }
+    if (['场景切换', '场景加载', 'loadscene'].some(k => lowerText.includes(k))) {
+      add('get_api_detail', 'Scene');
+    }
+    if (['资源加载', '预加载', 'loader', 'load('].some(k => lowerText.includes(k))) {
+      add('get_api_detail', 'Loader');
+    }
+    if (['定时', '计时', 'timer', 'setinterval', 'settimeout'].some(k => lowerText.includes(k))) {
+      add('get_api_detail', 'Timer');
     }
 
-    // ── 4. 标题提炼 → query_docs（≤4词，去噪音）
-    const titleKeywords = this._extractKeywords(title, 4);
-    if (titleKeywords) {
-      add('query_docs', titleKeywords);
-    }
+    // ── 6. 标题关键词 → query_docs
+    const titleKw = this._extractKeywords(title, 4);
+    if (titleKw) add('query_docs', titleKw);
 
-    // ── 5. 正文补充（前面查询不足2条时追加）
+    // ── 7. 补充正文关键词（查询不足 2 条时）
     if (results.length < 2) {
-      const contentKeywords = this._extractKeywords(content, 4);
-      if (contentKeywords) {
-        add('query_api', contentKeywords);
-      }
+      const contentKw = this._extractKeywords(content, 4);
+      if (contentKw) add('query_api', contentKw);
     }
 
-    return results.slice(0, 5); // 最多5条查询
+    return results.slice(0, 5);
   }
 
   /**
