@@ -8,12 +8,25 @@ require('dotenv').config();
 // 噪音词列表（全局常量）
 // ============================================================
 const NOISE_WORDS = new Set([
-  '怎么', '如何', '实现', '问题', '请问', '关于', '为什么', '我想', '可以', '帮我',
-  '谢谢', '求助', '使用', '用', 'layaair', 'laya', '引擎', '版本', '怎样', '一个',
-  '这个', '什么', '会不会', '能不能', '有没有', '是否', '不行', '了', '吗', '呢',
-  '啊', '哦', '呀', '嘛', '吧', '着', '过', '给', '把', '被', '让', '叫', '使',
-  '通过', '根据', '按照', '由于', '因为', '所以', '但是', '然后', '接着', '最后',
-  '代码', '方法', '功能', '效果', '东西', '情况', '时候', '位置', '地方', '部分'
+  // 基础疑问词
+  '怎么', '如何', '什么', '为什么', '哪里', '哪个', '哪些', '怎样', '如何',
+  // 动词
+  '实现', '问题', '请问', '关于', '我想', '可以', '帮我', '谢谢', '求助',
+  '使用', '用', '给', '添加', '删除', '创建', '生成', '获取', '设置', '获得',
+  '写', '做', '让', '使', '把', '被', '叫', '称', '为', '从', '到', '在',
+  '想', '要', '需要', '想要', '希望', '应该', '能够', '能够',
+  // 介词/连词
+  '通过', '根据', '按照', '由于', '因为', '所以', '但是', '然后', '接着',
+  '最后', '如果', '虽然', '还是', '或者', '而且', '并且',
+  // 代词
+  '一个', '这个', '那个', '哪些', '什么', '有些',
+  // 助词
+  '的', '了', '吗', '呢', '啊', '哦', '呀', '嘛', '吧', '着', '过',
+  // 方位词
+  '上', '下', '里', '外', '中', '间', '后', '前', '左', '右',
+  // 常见通用词
+  'layaair', 'laya', '引擎', '版本', '代码', '方法', '功能', '效果', '东西',
+  '情况', '时候', '位置', '地方', '部分', '内容', '类型', '方式', '状态'
 ]);
 
 class QuestionProcessor {
@@ -41,13 +54,27 @@ class QuestionProcessor {
     // 分词
     const words = noPunctuation.split(/\s+/);
 
-    // 去噪音
-    const filtered = words.filter(w =>
-      w.length > 1 &&
-      !NOISE_WORDS.has(w.toLowerCase())
-    );
+    // 优先级排序：API名称 > 中文技术词 > 普通词
+    const prioritized = words.filter(w => {
+      // 1. 去除单字符
+      if (w.length < 2) return false;
 
-    return filtered.slice(0, maxWords).join(' ');
+      // 2. 去除噪音词
+      if (NOISE_WORDS.has(w.toLowerCase())) return false;
+
+      // 3. 优先保留：大写开头的API名称
+      if (/^[A-Z][a-zA-Z0-9_]*$/.test(w)) return true;
+
+      // 4. 保留：中文词（2个字以上）
+      if (/^[\u4e00-\u9fa5]{2,}$/.test(w)) return true;
+
+      // 5. 保留：数字+字母组合（如 3D, 2D, PLY）
+      if (/^[A-Za-z0-9]+$/.test(w)) return true;
+
+      return false;
+    });
+
+    return prioritized.slice(0, maxWords).join(' ');
   }
 
   /**
@@ -89,6 +116,23 @@ class QuestionProcessor {
         add('get_api_detail', name);
       }
     });
+
+    // ── 2.5. 单独的大写类名（无Laya.前缀）→ get_api_detail（新增）
+    // 识别像 Sprite, Animator, Camera 这样的独立类名
+    const standaloneClassPattern = /(?:^|\s)([A-Z][a-zA-Z0-9_]*)\b/g;
+    let match;
+    const seenClasses = new Set(classNames.map(c => c.replace('Laya.', ''))); // 已识别的类
+
+    while ((match = standaloneClassPattern.exec(text)) !== null) {
+      const className = match[1];
+      // 过滤：至少3个字符，不是常见英文单词，已识别的类跳过
+      if (className.length >= 3 &&
+          !seenClasses.has(className) &&
+          !['AND', 'OR', 'NOT', 'URL', 'HTML', 'CSS', 'API', 'UI', '3D', '2D', 'ID'].includes(className)) {
+        add('get_api_detail', className);
+        seenClasses.add(className);
+      }
+    }
 
     // ── 3. 报错信息 → query_api
     const errorMatch = text.match(/(TypeError|ReferenceError|Cannot\s+\w+|未定义)[^\n]{0,60}/i);
