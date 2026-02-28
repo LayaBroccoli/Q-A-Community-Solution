@@ -1,0 +1,70 @@
+# AI评分系统和v4.0升级项目的.gitignore
+
+# 备份文件
+*.backup-*
+*.old
+*.bak
+
+# 临时测试文件
+DEBUG_*.txt
+*_ANALYSIS.md
+*_PLAN.md
+FIXED_*.txt
+INTEGRATION_*.txt
+FINAL_*.txt
+LATEST_*.txt
+SIMPLEST_*.txt
+CHECK_*.txt
+RATED_*.txt
+PHP_*.txt
+CORS_*.txt
+
+# 测试脚本
+ai-service/test-*.js
+ai-service/check-*.js
+ai-service/*-test.js
+ai-service/apply-*.sh
+ai-service/reprocess-*.js
+ai-service/show-reasoning.js
+ai-service/trigger-ai.js
+ai-service/diagnose-*.js
+ai-service/create-*.js
+ai-service/verify-*.js
+
+# 临时分析文件
+ai-service/*.backup-final
+ai-service/*.before-new-fix
+ai-service/processor_*.js
+ai-service/*.backup
+ai-service/mcp-client.js.backup
+ai-service/mcp-client.js.old
+ai-service/processor.js.backup-*
+
+# 日志文件
+*.log
+ai-service/server.log
+ai-service/proxy.log
+ai-service/nohup.out
+
+# Node modules
+node_modules/
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+
+# 测试结果目录
+test-results/
+
+# IDE配置
+.vscode/
+.idea/
+
+# OS文件
+.DS_Store
+Thumbs.db
+
+# 临时文档
+*_REPORT.md
+UNLICENSE
